@@ -68,6 +68,7 @@ test('shows usage against the configured context maximum on terminal and desktop
   let contextTokens = 52_000
   let branch = 'feature/session-branch-indicator'
   let isGitRepository = true
+  let configuredTarget: unknown
 
   const clock = mock.clock(on)
   on('session.usage', () => ({
@@ -88,9 +89,11 @@ test('shows usage against the configured context maximum on terminal and desktop
       isStderrTruncated: false,
     },
   }))
-  on('tool.call', () => ({
-    result: { stdout: '', stderr: '', interrupted: false },
-  }))
+  on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  on('config.set', ($, event) => {
+    configuredTarget = event.value
+    return { value: event.value }
+  })
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
 
@@ -111,9 +114,10 @@ test('shows usage against the configured context maximum on terminal and desktop
     if (!featureBranch) throw new Error('The working branch was not rendered')
     expect(featureBranch.props.color).toBe('success')
     expect(await ui.find({ type: 'Text', text: 'Context 17% of 300k' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Week 64%' })).toBeDefined()
     expect(await ui.find({ type: 'Button', key: 'context-details' })).toBeDefined()
     expect((await ui.find({ type: 'Button', key: 'context-details' }))?.props.label)
-      .toBe('Usage 64%')
+      .toBe('Details')
     expect(await ui.find({ type: 'Text', text: '$1.24' })).toBeUndefined()
     const meter = await ui.find({ type: 'Text', text: /^█/ })
     expect(meter?.props.color).toBe('success')
@@ -164,6 +168,16 @@ test('shows usage against the configured context maximum on terminal and desktop
     })
 
     expect(await pane.find({ type: 'Text', text: 'Session Details' })).toBeDefined()
+    expect(await pane.find({ type: 'Button', key: 'change-context-target' })).toBeDefined()
+    configuredTarget = undefined
+    await pane.press({ key: 'change-context-target' })
+    expect(await pane.find({ type: 'Input', key: 'context-target-input' })).toBeDefined()
+    await pane.input({ key: 'context-target-input', text: 'not a number' })
+    expect(configuredTarget).toBeUndefined()
+    expect(await pane.find({ type: 'Text', text: 'Enter 10k to 10m, such as 300k or 1m.' }))
+      .toBeDefined()
+    await pane.input({ key: 'context-target-input', text: '500k' })
+    expect(configuredTarget).toBe(500_000)
     expect(await pane.find({ type: 'Text', text: 'Five-hour usage' })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: 'Weekly usage' })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: '64%' })).toBeDefined()
@@ -185,4 +199,30 @@ test('shows usage against the configured context maximum on terminal and desktop
     await pane.unmount()
     await ui.unmount()
   }
+})
+
+test('uses the saved context target', { options: { context_max_tokens: 200_000 } }, async ($, on) => {
+  on('session.usage', () => ({ value: USAGE }))
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('session.cwd', () => ({ value: '/project' }))
+  on('process.run', () => ({
+    value: {
+      exitCode: 0,
+      stdout: 'main',
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+  const ui = await $.ui.mount({
+    plugin: 'session-hud',
+    surface: 'desktop',
+    component: 'AbovePrompt',
+    props: PROPS,
+  })
+
+  expect(await ui.find({ type: 'Text', text: 'Context 26% of 200k' })).toBeDefined()
+  await ui.unmount()
 })

@@ -108,7 +108,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 
 | Mod | What it does | How to open or test it |
 | --- | --- | --- |
-| Session HUD | Shows the current Git branch, context, and weekly usage with detailed session information | Switch branches or click `Usage` beside the context meter |
+| Session HUD | Shows the current Git branch, context, and weekly usage with detailed session information | Switch branches or click `Details` beside the context meter |
 | Impact Map | Tracks touched files and opens current Git diffs | Select an edited or created file in the Impact Map |
 | Tool Cards | Replaces normal tool-use rows with compact status cards | Ask Claude to read a file or run a command |
 | Safe Shell | Demonstrates a confirmation gate for a marked Bash command | Ask Claude to run `echo __SAFE_SHELL_DEMO__` |
@@ -128,7 +128,7 @@ Session HUD draws a compact band above the prompt with:
 
 Working branches appear in green. `main` and `master` appear in yellow as a reminder that you are on the default branch. Detached HEAD states are also yellow, and folders outside a Git repository say so directly. Session HUD checks every five seconds, so it also catches branch changes made in the built-in terminal or another terminal. Branches changed by a Claude Bash tool refresh immediately.
 
-Click the `Usage` button beside the progress bar to open Session Details. The pane shows:
+The compact `Week` label shows overall seven-day account usage. Click `Details` beside it to open Session Details. The pane shows:
 
 - Five-hour account usage with its reset time
 - Weekly account usage with its reset time
@@ -142,23 +142,15 @@ Claude Code also counts the current context and shows:
 - Loaded MCP tokens grouped by server, with tool details available from a server picker
 - Free space and the automatic compaction buffer
 
-The full breakdown runs only when you click `Usage` or press Refresh. It does not poll in the background. Claude Code provides a reliable total for Messages, but it does not provide a reliable token count for every individual message.
+The full breakdown runs only when you click `Details` or press Refresh. It does not poll in the background. Claude Code provides a reliable total for Messages, but it does not provide a reliable token count for every individual message.
 
 The context percentage uses a configurable personal target. It does not change Claude's actual context window or automatic compaction behavior.
 
 ### Change the context target
 
-Open [`session-hud/hooks/config.ts`](./session-hud/hooks/config.ts):
+Open Session Details and select `Change` beside the current target. Enter a value such as `200k`, `300k`, `750k`, or `1m`, then press Enter to save it. You can also open Claude Code's `/config` menu and change `Context target` there.
 
-```ts
-export const CONTEXT_MAX_TOKENS = 300_000
-```
-
-Change `300_000` to the number you want to treat as 100 percent. For example:
-
-```ts
-export const CONTEXT_MAX_TOKENS = 200_000
-```
+The setting is saved with the plugin and applies to future sessions. The default is 300k, and accepted values range from 10k through 10m.
 
 The meter is green below 70 percent, yellow from 70 through 89 percent, and red at 90 percent or higher. Its visual fill stops at 100 percent, but the numeric percentage can go higher.
 
@@ -169,9 +161,10 @@ The meter is green below 70 percent, yellow from 70 through 89 percent, and red 
 3. Look directly above the prompt box.
 4. Confirm that the current branch, context, and weekly usage appear.
 5. Switch branches in the built-in terminal and confirm that the label updates within five seconds.
-6. Confirm that the `Usage` button shows your weekly percentage.
-7. Click `Usage` beside the progress bar.
+6. Confirm that the `Week` label shows your weekly percentage.
+7. Click `Details` beside the progress bar.
 8. Confirm that Session Details shows five-hour usage, weekly usage, session cost, context categories, and any connected MCP tool schemas.
+9. Select `Change`, enter another context target, and confirm that the percentage updates after the mod reloads.
 
 Source: [`session-hud/hooks/register.tsx`](./session-hud/hooks/register.tsx)
 
