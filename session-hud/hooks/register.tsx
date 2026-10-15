@@ -6,7 +6,11 @@ import type {
   SessionRateLimit,
   SessionUsage,
 } from 'claude-code'
-import { CONTEXT_MAX_TOKENS } from './config.ts'
+import {
+  DEFAULT_CONTEXT_MAX_TOKENS,
+  MAX_CONTEXT_MAX_TOKENS,
+  MIN_CONTEXT_MAX_TOKENS,
+} from './config.ts'
 
 const PANE = 'context-breakdown'
 const MCP_SERVER_LIMIT = 5
@@ -93,6 +97,56 @@ function detailTokenLabel(tokens: number): string {
   if (tokens >= 10_000) return `${Math.round(tokens / 1_000)}k`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
   return tokens.toLocaleString()
+}
+
+function contextMaxTokens(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_CONTEXT_MAX_TOKENS
+  }
+
+  return Math.min(
+    MAX_CONTEXT_MAX_TOKENS,
+    Math.max(MIN_CONTEXT_MAX_TOKENS, Math.round(value)),
+  )
+}
+
+function parseContextTarget(answer: string): number | null {
+  const normalized = answer.trim().toLowerCase().replaceAll(',', '').replaceAll('_', '')
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([km])?$/)
+  if (!match) return null
+
+  const amount = Number(match[1])
+  const multiplier = match[2] === 'm' ? 1_000_000 : match[2] === 'k' ? 1_000 : 1
+  const tokens = Math.round(amount * multiplier)
+
+  if (tokens < MIN_CONTEXT_MAX_TOKENS || tokens > MAX_CONTEXT_MAX_TOKENS) return null
+  return tokens
+}
+
+async function changeContextTarget(
+  $: EngineInterface,
+): Promise<void> {
+  try {
+    const answer = await $.ui.ask(
+      'What should count as 100% context?',
+      ['200k', '300k', '500k', '1m'],
+    )
+    const target = parseContextTarget(answer)
+
+    if (!target) {
+      $.ui.toast('Enter a target from 10k through 10m.')
+      return
+    }
+
+    const result = await $.config.set({
+      key: 'session-hud.context_max_tokens',
+      value: target,
+    })
+
+    if ('deny' in result && result.deny) $.ui.toast(result.deny)
+  } catch {
+    // Closing the target picker leaves the current setting unchanged.
+  }
 }
 
 function percentage(tokens: number, total: number): string {
@@ -242,7 +296,9 @@ async function openBreakdown($: EngineInterface): Promise<void> {
   await refreshBreakdown($, 58)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const contextTarget = contextMaxTokens(options.context_max_tokens)
+
   on('session.start', async ($, event, next) => {
     branchState = { kind: 'loading', label: 'Checking branch' }
     await refreshBranch($, event.cwd)
@@ -274,7 +330,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(event)
     const usage = await $.session.usage()
     const tokens = usage.context.tokens ?? 0
-    const percent = Math.max(0, Math.round((tokens / CONTEXT_MAX_TOKENS) * 100))
+    const percent = Math.max(0, Math.round((tokens / contextTarget) * 100))
     const width = Math.max(8, Math.min(20, event.props.bodyColumns - 50))
     const weeklyLimit = usage.rateLimits.find(limit => limit.kind === 'seven_day')
     const meterColor = usageColor(percent)
@@ -287,15 +343,16 @@ export const register: Register = on => {
             <Text dimColor>Branch</Text>
             <Text bold color={branchColor(branchState.kind)}>{branchState.label}</Text>
           </Box>
-          <Box gap={1} alignItems="center">
-            <Text bold>Context {percent}% of {tokenLabel(CONTEXT_MAX_TOKENS)}</Text>
+          <Box gap={1} alignItems="center" flexWrap="wrap">
+            <Text bold>Context {percent}% of {tokenLabel(contextTarget)}</Text>
             <Box>
               <Text color={meterColor}>{contextMeter.filled}</Text>
               <Text color="inactive">{contextMeter.remaining}</Text>
             </Box>
+            {weeklyLimit && <Text dimColor>Week {weeklyLimit.percentUsed}%</Text>}
             <Button
               key="context-details"
-              label={weeklyLimit ? `Usage ${weeklyLimit.percentUsed}%` : 'Usage'}
+              label="Details"
               plain
               onPress={() => {
                 void openBreakdown($)
@@ -350,7 +407,7 @@ export const register: Register = on => {
       .reduce((total, category) => total + category.tokens, 0)
     const personalPercent = Math.max(
       0,
-      Math.round((current.totalTokens / CONTEXT_MAX_TOKENS) * 100),
+      Math.round((current.totalTokens / contextTarget) * 100),
     )
     const windowPercent = Math.max(
       0,
@@ -428,7 +485,18 @@ export const register: Register = on => {
 
         <Box flexDirection="column">
           <Box justifyContent="space-between" width="100%">
-            <Text bold>{detailTokenLabel(current.totalTokens)} / {tokenLabel(CONTEXT_MAX_TOKENS)} target</Text>
+            <Box gap={1} alignItems="center">
+              <Text bold>{detailTokenLabel(current.totalTokens)} / {tokenLabel(contextTarget)} target</Text>
+              <Button
+                key="change-context-target"
+                label="Change"
+                plain
+                dimColor
+                onPress={() => {
+                  void changeContextTarget($)
+                }}
+              />
+            </Box>
             <Text color={usageColor(personalPercent)} bold>{personalPercent}%</Text>
           </Box>
           {progressBar(personalPercent, barWidth, usageColor(personalPercent))}
