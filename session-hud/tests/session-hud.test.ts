@@ -89,19 +89,7 @@ test('shows usage against the configured context maximum on terminal and desktop
       isStderrTruncated: false,
     },
   }))
-  on('tool.call', ($, event) => {
-    if (event.tool === 'AskUserQuestion') {
-      const question = event.questions[0]?.question ?? ''
-      return {
-        result: {
-          questions: event.questions,
-          answers: { [question]: '500k' },
-        },
-      }
-    }
-
-    return { result: { stdout: '', stderr: '', interrupted: false } }
-  })
+  on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   on('config.set', ($, event) => {
     configuredTarget = event.value
     return { value: event.value }
@@ -183,6 +171,12 @@ test('shows usage against the configured context maximum on terminal and desktop
     expect(await pane.find({ type: 'Button', key: 'change-context-target' })).toBeDefined()
     configuredTarget = undefined
     await pane.press({ key: 'change-context-target' })
+    expect(await pane.find({ type: 'Input', key: 'context-target-input' })).toBeDefined()
+    await pane.input({ key: 'context-target-input', text: 'not a number' })
+    expect(configuredTarget).toBeUndefined()
+    expect(await pane.find({ type: 'Text', text: 'Enter 10k to 10m, such as 300k or 1m.' }))
+      .toBeDefined()
+    await pane.input({ key: 'context-target-input', text: '500k' })
     expect(configuredTarget).toBe(500_000)
     expect(await pane.find({ type: 'Text', text: 'Five-hour usage' })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: 'Weekly usage' })).toBeDefined()

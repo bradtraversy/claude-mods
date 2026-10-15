@@ -148,7 +148,7 @@ The context percentage uses a configurable personal target. It does not change C
 
 ### Change the context target
 
-Open Session Details and select `Change` beside the current target. Pick 200k, 300k, 500k, or 1m, or enter a custom value such as `750k`. You can also open Claude Code's `/config` menu and change `Context target` there.
+Open Session Details and select `Change` beside the current target. Enter a value such as `200k`, `300k`, `750k`, or `1m`, then press Enter to save it. You can also open Claude Code's `/config` menu and change `Context target` there.
 
 The setting is saved with the plugin and applies to future sessions. The default is 300k, and accepted values range from 10k through 10m.
 
@@ -164,7 +164,7 @@ The meter is green below 70 percent, yellow from 70 through 89 percent, and red 
 6. Confirm that the `Week` label shows your weekly percentage.
 7. Click `Details` beside the progress bar.
 8. Confirm that Session Details shows five-hour usage, weekly usage, session cost, context categories, and any connected MCP tool schemas.
-9. Select `Change`, choose another context target, and confirm that the percentage updates after the mod reloads.
+9. Select `Change`, enter another context target, and confirm that the percentage updates after the mod reloads.
 
 Source: [`session-hud/hooks/register.tsx`](./session-hud/hooks/register.tsx)
 

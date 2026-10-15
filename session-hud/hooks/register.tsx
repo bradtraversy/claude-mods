@@ -25,6 +25,9 @@ let selectedMcpServer: string | null = null
 let mcpPage = 0
 let branchRefreshStarted = false
 let branchRefreshing = false
+let editingContextTarget = false
+let contextTargetDraft = ''
+let contextTargetError = ''
 
 type BranchState = {
   kind: 'loading' | 'branch' | 'default' | 'detached' | 'none' | 'error'
@@ -123,18 +126,16 @@ function parseContextTarget(answer: string): number | null {
   return tokens
 }
 
-async function changeContextTarget(
-  $: EngineInterface,
-): Promise<void> {
+async function saveContextTarget($: EngineInterface, answer: string): Promise<void> {
+  contextTargetDraft = answer
+  contextTargetError = ''
+
   try {
-    const answer = await $.ui.ask(
-      'What should count as 100% context?',
-      ['200k', '300k', '500k', '1m'],
-    )
     const target = parseContextTarget(answer)
 
     if (!target) {
-      $.ui.toast('Enter a target from 10k through 10m.')
+      contextTargetError = 'Enter 10k to 10m, such as 300k or 1m.'
+      $.ui.invalidate('ui.render')
       return
     }
 
@@ -143,9 +144,18 @@ async function changeContextTarget(
       value: target,
     })
 
-    if ('deny' in result && result.deny) $.ui.toast(result.deny)
+    if ('deny' in result && result.deny) {
+      contextTargetError = result.deny
+      $.ui.invalidate('ui.render')
+      return
+    }
+
+    editingContextTarget = false
+    contextTargetError = ''
+    $.ui.invalidate('ui.render')
   } catch {
-    // Closing the target picker leaves the current setting unchanged.
+    contextTargetError = 'The context target could not be saved.'
+    $.ui.invalidate('ui.render')
   }
 }
 
@@ -466,6 +476,31 @@ export const register: Register = (on, options) => {
         />
       )
     })()
+    const contextTargetEditor = !editingContextTarget ? null : event.surface === 'mobile' ? (
+      <Text dimColor>Change Context target from /config.</Text>
+    ) : (() => {
+      const { Input } = $.ui.resolve(event)
+      return (
+        <Box flexDirection="column">
+          <Input
+            key="context-target-input"
+            label="Target"
+            value={contextTargetDraft}
+            placeholder="300k"
+            submitLabel="Save"
+            autoFocus
+            onInput={value => {
+              contextTargetDraft = value
+              contextTargetError = ''
+            }}
+            onSubmit={value => {
+              void saveContextTarget($, value)
+            }}
+          />
+          {contextTargetError && <Text color="error">{contextTargetError}</Text>}
+        </Box>
+      )
+    })()
 
     return (
       <Box flexDirection="column" gap={1}>
@@ -489,16 +524,20 @@ export const register: Register = (on, options) => {
               <Text bold>{detailTokenLabel(current.totalTokens)} / {tokenLabel(contextTarget)} target</Text>
               <Button
                 key="change-context-target"
-                label="Change"
+                label={editingContextTarget ? 'Cancel' : 'Change'}
                 plain
                 dimColor
                 onPress={() => {
-                  void changeContextTarget($)
+                  editingContextTarget = !editingContextTarget
+                  contextTargetDraft = editingContextTarget ? tokenLabel(contextTarget) : ''
+                  contextTargetError = ''
+                  $.ui.invalidate('ui.render')
                 }}
               />
             </Box>
             <Text color={usageColor(personalPercent)} bold>{personalPercent}%</Text>
           </Box>
+          {contextTargetEditor}
           {progressBar(personalPercent, barWidth, usageColor(personalPercent))}
           <Text dimColor>{current.model} · {tokenLabel(current.rawMaxTokens)} model window</Text>
         </Box>
