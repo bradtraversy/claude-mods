@@ -2,7 +2,7 @@
 
 A collection of personal Claude Code mods by Brad Traversy. These mods add useful session information, interface customizations, safety demonstrations, and verification tools to Claude Code.
 
-Every mod is a small, independent Claude Code plugin written in TypeScript. Install only the ones you want, or run all six together.
+Every mod is a small, independent Claude Code plugin written in TypeScript. Install only the ones you want, or run all seven together.
 
 > [!IMPORTANT]
 > Mods run inside Claude Code with your user permissions. They can see session events, start processes, access files, and make network requests. Read the source before installing any mod, including these.
@@ -66,7 +66,7 @@ Install one mod:
 claude plugin install session-hud@traversy-mods
 ```
 
-Install all six:
+Install all seven:
 
 ```bash
 claude plugin install session-hud@traversy-mods
@@ -75,6 +75,7 @@ claude plugin install tool-cards@traversy-mods
 claude plugin install safe-shell@traversy-mods
 claude plugin install quality-console@traversy-mods
 claude plugin install verification-ledger@traversy-mods
+claude plugin install agent-pulse@traversy-mods
 ```
 
 Inside an interactive session, the same commands start with `/plugin install` instead of `claude plugin install`.
@@ -112,6 +113,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 | Safe Shell | Demonstrates a confirmation gate for a marked Bash command | Ask Claude to run `echo __SAFE_SHELL_DEMO__` |
 | Quality Console | Validates a local mod from inside Claude Code | Enter `/mod-check <path>` |
 | Verification Ledger | Tracks local checks, Git state, and GitHub Actions | Enter `/checks` |
+| Agent Pulse | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agents` |
 
 ## Session HUD
 
@@ -163,7 +165,7 @@ The meter is green below 70 percent, yellow from 70 through 89 percent, and red 
 1. Install and load `session-hud`.
 2. Send a prompt so Claude Code records session usage.
 3. Look directly above the prompt box.
-4. Confirm that the current branch, context, cost, and available rate limit appear.
+4. Confirm that the current branch, context, and weekly usage appear.
 5. Switch branches in the built-in terminal and confirm that the label updates within five seconds.
 6. Confirm that the `Usage` button shows your weekly percentage.
 7. Click `Usage` beside the progress bar.
@@ -370,6 +372,49 @@ Change the values to control how often the open pane refreshes and how many work
 
 Source: [`verification-ledger/hooks/register.tsx`](./verification-ledger/hooks/register.tsx)
 
+## Agent Pulse
+
+Agent Pulse opens an `Agents` pane when the first subagent starts in the current session. It gives each agent a compact card with:
+
+- Current status
+- Agent name or task description
+- Elapsed time since the mod first observed it
+- Current tool while one is running
+- Most recent tool after it finishes
+
+The pane does not open when a session has no subagents. It also does not take keyboard focus when it opens automatically. Enter `/agents` whenever you want to open it manually or bring it back after closing it.
+
+Select `View` on an agent card to replace the list with a compact detail view. The detail view shows the agent type, status, elapsed time, parent agent when present, and up to eight recent transcript messages. Select `Back` to return to the full list.
+
+Agent Pulse keeps finished agents in the pane for the rest of the current session, even when Claude Code no longer includes them in its live agent list. The history resets when the mod reloads or a new session starts.
+
+Possible states are:
+
+- `PENDING` before work begins
+- `RUNNING` while the agent is working
+- `WAITING` when it is waiting on another action
+- `IDLE` when a teammate is available for more work
+- `COMPLETED` after a successful result
+- `FAILED` after an error or refusal
+- `KILLED` after an interrupted run
+
+Agent Pulse uses only Claude Code's agent, session, clock, command, and interface APIs. It does not call a model, start a process, read project files, make a network request, or save agent transcripts outside the current session.
+
+Claude Code may deny transcript access for an agent running in another process, a remote workflow agent, or an agent whose saved transcript is no longer available. The card still shows any status and activity that Claude Code reports, and the detail view explains when its transcript cannot be read.
+
+### Test Agent Pulse
+
+1. Install and load `agent-pulse`.
+2. Enter `/agents` and confirm that the empty state says there are no subagents in the session.
+3. Ask Claude to use an Explore subagent to inspect a small part of the current project.
+4. Confirm that the `Agents` pane opens without taking focus.
+5. Watch the card update with the agent status, elapsed time, and current or last tool.
+6. Select `View` and confirm that the recent prompt, response, and tool names appear.
+7. Select `Back` to return to the agent list.
+8. Repeat the same check in a terminal session and a local session in the desktop Code tab.
+
+Source: [`agent-pulse/hooks/register.tsx`](./agent-pulse/hooks/register.tsx)
+
 ## How the mods work together
 
 The mods have separate responsibilities, so their interface elements do not duplicate each other:
@@ -378,10 +423,11 @@ The mods have separate responsibilities, so their interface elements do not dupl
 - Tool Cards owns tool-use rows in the transcript.
 - Impact Map owns a file-activity pane.
 - Verification Ledger owns a checks pane.
+- Agent Pulse owns a live subagent pane.
 - Quality Console owns `/mod-check`.
 - Safe Shell owns only its marked-command confirmation.
 
-Impact Map and Verification Ledger share Claude Code's single docked pane area as separate tabs. All other mods use different interface regions or event types.
+Impact Map, Verification Ledger, and Agent Pulse share Claude Code's single docked pane area as separate tabs. All other mods use different interface regions or event types.
 
 ## Develop locally from scratch
 
@@ -404,6 +450,7 @@ claude plugin validate ./tool-cards
 claude plugin validate ./safe-shell
 claude plugin validate ./quality-console
 claude plugin validate ./verification-ledger
+claude plugin validate ./agent-pulse
 ```
 
 Validation reads the mod without executing it. Review the reported `hooks:` and `calls:` lines to see what it handles and which Claude Code APIs it uses.
@@ -417,6 +464,7 @@ claude plugin test ./tool-cards
 claude plugin test ./safe-shell
 claude plugin test ./quality-console
 claude plugin test ./verification-ledger
+claude plugin test ./agent-pulse
 ```
 
 The interface tests mount each visual mod on simulated terminal and desktop surfaces.
