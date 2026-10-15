@@ -1,0 +1,6 @@
+{
+  "name": "session-hud",
+  "version": "0.1.0",
+  "description": "Shows session context, cost, and rate-limit usage above the prompt",
+  "author": { "name": "Brad Traversy" }
+}

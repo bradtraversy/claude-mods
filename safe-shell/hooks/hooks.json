@@ -1,0 +1,4 @@
+{
+  "description": "Safe Shell demonstration hooks",
+  "modules": ["./register.ts"]
+}

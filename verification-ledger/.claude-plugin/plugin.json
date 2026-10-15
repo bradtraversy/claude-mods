@@ -1,0 +1,6 @@
+{
+  "name": "verification-ledger",
+  "version": "0.1.0",
+  "description": "Tracks local verification commands and GitHub Actions for the current commit",
+  "author": { "name": "Brad Traversy" }
+}

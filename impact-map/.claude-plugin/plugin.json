@@ -1,0 +1,6 @@
+{
+  "name": "impact-map",
+  "version": "0.1.0",
+  "description": "Shows files Claude has read and changed during the current session",
+  "author": { "name": "Brad Traversy" }
+}

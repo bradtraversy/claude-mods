@@ -1,0 +1,6 @@
+{
+  "name": "safe-shell",
+  "version": "0.1.0",
+  "description": "Demonstrates a shell-command confirmation gate with a harmless marker",
+  "author": { "name": "Brad Traversy" }
+}

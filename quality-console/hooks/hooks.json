@@ -1,0 +1,4 @@
+{
+  "description": "Quality Console hooks",
+  "modules": ["./register.ts"]
+}

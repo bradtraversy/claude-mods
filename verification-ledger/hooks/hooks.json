@@ -1,0 +1,4 @@
+{
+  "description": "Verification Ledger hooks",
+  "modules": ["./register.tsx"]
+}

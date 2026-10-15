@@ -1,0 +1,39 @@
+{
+  "name": "traversy-mods",
+  "description": "Personal Claude Code mods from Brad Traversy",
+  "owner": {
+    "name": "Brad Traversy"
+  },
+  "plugins": [
+    {
+      "name": "session-hud",
+      "source": "./session-hud",
+      "description": "Shows context usage, session cost, and rate-limit usage above the prompt"
+    },
+    {
+      "name": "impact-map",
+      "source": "./impact-map",
+      "description": "Shows files Claude has read and changed during the current session"
+    },
+    {
+      "name": "tool-cards",
+      "source": "./tool-cards",
+      "description": "Replaces tool-use rows with compact status cards"
+    },
+    {
+      "name": "safe-shell",
+      "source": "./safe-shell",
+      "description": "Demonstrates a shell-command confirmation gate with a harmless marker"
+    },
+    {
+      "name": "quality-console",
+      "source": "./quality-console",
+      "description": "Adds a command that validates any local Claude Code mod"
+    },
+    {
+      "name": "verification-ledger",
+      "source": "./verification-ledger",
+      "description": "Tracks local verification commands and GitHub Actions for the current commit"
+    }
+  ]
+}

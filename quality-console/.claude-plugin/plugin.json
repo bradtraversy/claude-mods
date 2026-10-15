@@ -1,0 +1,6 @@
+{
+  "name": "quality-console",
+  "version": "0.1.0",
+  "description": "Adds a slash command that validates any local Claude Code mod",
+  "author": { "name": "Brad Traversy" }
+}

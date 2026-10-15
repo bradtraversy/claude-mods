@@ -1,0 +1,6 @@
+{
+  "name": "tool-cards",
+  "version": "0.1.0",
+  "description": "Replaces tool-use rows with compact cards that highlight status and target",
+  "author": { "name": "Brad Traversy" }
+}
