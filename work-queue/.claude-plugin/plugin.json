@@ -1,0 +1,6 @@
+{
+  "name": "work-queue",
+  "version": "0.1.0",
+  "description": "Shows Claude session tasks grouped by working, blocked, ready, and done",
+  "author": { "name": "Brad Traversy" }
+}
