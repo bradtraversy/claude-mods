@@ -3,18 +3,34 @@ import type {
   EngineInterface,
   Register,
   SessionContextBreakdown,
+  SessionRateLimit,
+  SessionUsage,
 } from 'claude-code'
 import { CONTEXT_MAX_TOKENS } from './config.ts'
 
 const PANE = 'context-breakdown'
 const MCP_SERVER_LIMIT = 5
 const MCP_TOOLS_PER_PAGE = 10
+const BRANCH_REFRESH_INTERVAL_MS = 5_000
 
 let breakdown: SessionContextBreakdown | null = null
 let breakdownError = ''
 let breakdownLoading = false
+let detailUsage: SessionUsage | null = null
 let selectedMcpServer: string | null = null
 let mcpPage = 0
+let branchRefreshStarted = false
+let branchRefreshing = false
+
+type BranchState = {
+  kind: 'loading' | 'branch' | 'default' | 'detached' | 'none' | 'error'
+  label: string
+}
+
+let branchState: BranchState = {
+  kind: 'loading',
+  label: 'Checking branch',
+}
 
 type McpServerGroup = {
   name: string
@@ -38,6 +54,25 @@ function rateLimitLabel(kind: string): string {
   if (kind === 'five_hour') return '5h'
   if (kind === 'seven_day') return '7d'
   return kind.replaceAll('_', ' ')
+}
+
+function rateLimitTitle(limit: SessionRateLimit): string {
+  if (limit.kind === 'five_hour') return 'Five-hour usage'
+  if (limit.kind === 'seven_day') return 'Weekly usage'
+  return rateLimitLabel(limit.kind)
+}
+
+function resetLabel(resetsAt?: string): string {
+  if (!resetsAt) return ''
+
+  const date = new Date(resetsAt)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return `Resets ${date.toLocaleString([], {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`
 }
 
 function tokenLabel(tokens: number): string {
@@ -70,6 +105,69 @@ function usageColor(percent: number): 'success' | 'warning' | 'error' {
   if (percent >= 90) return 'error'
   if (percent >= 70) return 'warning'
   return 'success'
+}
+
+function branchColor(kind: BranchState['kind']): 'success' | 'warning' | 'inactive' {
+  if (kind === 'branch') return 'success'
+  if (kind === 'default' || kind === 'detached') return 'warning'
+  return 'inactive'
+}
+
+function compactBranchName(name: string, maxLength = 36): string {
+  if (name.length <= maxLength) return name
+
+  const tailLength = 10
+  const headLength = maxLength - tailLength - 3
+  return `${name.slice(0, headLength)}...${name.slice(-tailLength)}`
+}
+
+function updateBranch($: EngineInterface, nextState: BranchState): void {
+  if (branchState.kind === nextState.kind && branchState.label === nextState.label) return
+
+  branchState = nextState
+  $.ui.invalidate('ui.render')
+}
+
+async function refreshBranch($: EngineInterface, cwd?: string): Promise<void> {
+  if (branchRefreshing) return
+
+  branchRefreshing = true
+
+  try {
+    const directory = cwd ?? await $.session.cwd()
+    const current = await $.process.run(['git', 'branch', '--show-current'], {
+      cwd: directory,
+      timeoutMs: 5_000,
+    })
+
+    if (current.exitCode !== 0) {
+      updateBranch($, { kind: 'none', label: 'Not a Git repository' })
+      return
+    }
+
+    const name = current.stdout.trim()
+    if (name) {
+      updateBranch($, {
+        kind: name === 'main' || name === 'master' ? 'default' : 'branch',
+        label: compactBranchName(name),
+      })
+      return
+    }
+
+    const commit = await $.process.run(['git', 'rev-parse', '--short', 'HEAD'], {
+      cwd: directory,
+      timeoutMs: 5_000,
+    })
+    const shortCommit = commit.stdout.trim()
+
+    updateBranch($, commit.exitCode === 0 && shortCommit
+      ? { kind: 'detached', label: `detached@${shortCommit}` }
+      : { kind: 'none', label: 'Not a Git repository' })
+  } catch {
+    updateBranch($, { kind: 'error', label: 'Branch unavailable' })
+  } finally {
+    branchRefreshing = false
+  }
 }
 
 function friendlyName(value: string, maxLength = 28): string {
@@ -120,6 +218,7 @@ async function refreshBreakdown($: EngineInterface, columns: number): Promise<vo
 
   try {
     const usage = await $.session.usage({ breakdown: 'full', columns })
+    detailUsage = usage
     breakdown = usage.context.breakdown ?? null
     if (!breakdown) breakdownError = 'Claude Code did not return a context breakdown yet.'
   } catch (error) {
@@ -135,7 +234,7 @@ async function openBreakdown($: EngineInterface): Promise<void> {
   mcpPage = 0
   await $.ui.open({
     id: PANE,
-    title: 'Context',
+    title: 'Session',
     focus: true,
     closeOnEscape: true,
     columns: 58,
@@ -144,6 +243,26 @@ async function openBreakdown($: EngineInterface): Promise<void> {
 }
 
 export const register: Register = on => {
+  on('session.start', async ($, event, next) => {
+    branchState = { kind: 'loading', label: 'Checking branch' }
+    await refreshBranch($, event.cwd)
+
+    if (!branchRefreshStarted) {
+      branchRefreshStarted = true
+      $.clock.every(BRANCH_REFRESH_INTERVAL_MS, () => {
+        void refreshBranch($)
+      })
+    }
+
+    return next(event)
+  })
+
+  on('tool.call', { tool: 'Bash' }, async ($, event, next) => {
+    const result = await next(event)
+    await refreshBranch($)
+    return result
+  }).catch(($, event, next) => next(event))
+
   on('session.measure', ($, event, next) => {
     $.ui.invalidate('ui.render')
     return next(event)
@@ -157,32 +276,32 @@ export const register: Register = on => {
     const tokens = usage.context.tokens ?? 0
     const percent = Math.max(0, Math.round((tokens / CONTEXT_MAX_TOKENS) * 100))
     const width = Math.max(8, Math.min(20, event.props.bodyColumns - 50))
-    const primaryLimit = usage.rateLimits[0]
+    const weeklyLimit = usage.rateLimits.find(limit => limit.kind === 'seven_day')
     const meterColor = usageColor(percent)
     const contextMeter = meter(percent, width)
 
     return (
       <Box flexDirection="column">
-        <Box gap={1} alignItems="center">
-          <Text bold>Context {percent}% of {tokenLabel(CONTEXT_MAX_TOKENS)}</Text>
-          <Box>
-            <Text color={meterColor}>{contextMeter.filled}</Text>
-            <Text color="inactive">{contextMeter.remaining}</Text>
+        <Box gap={2} alignItems="center" flexWrap="wrap">
+          <Box gap={1} alignItems="center">
+            <Text dimColor>Branch</Text>
+            <Text bold color={branchColor(branchState.kind)}>{branchState.label}</Text>
           </Box>
-          <Button
-            key="context-details"
-            label="Details"
-            plain
-            onPress={() => {
-              void openBreakdown($)
-            }}
-          />
-          {usage.cost && <Text dimColor>${usage.cost.usd.toFixed(2)}</Text>}
-          {primaryLimit && (
-            <Text dimColor>
-              {rateLimitLabel(primaryLimit.kind)} {primaryLimit.percentUsed}%
-            </Text>
-          )}
+          <Box gap={1} alignItems="center">
+            <Text bold>Context {percent}% of {tokenLabel(CONTEXT_MAX_TOKENS)}</Text>
+            <Box>
+              <Text color={meterColor}>{contextMeter.filled}</Text>
+              <Text color="inactive">{contextMeter.remaining}</Text>
+            </Box>
+            <Button
+              key="context-details"
+              label={weeklyLimit ? `Usage ${weeklyLimit.percentUsed}%` : 'Usage'}
+              plain
+              onPress={() => {
+                void openBreakdown($)
+              }}
+            />
+          </Box>
         </Box>
       </Box>
     )
@@ -196,7 +315,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           <Box justifyContent="space-between" alignItems="center" width="100%">
-            <Text bold>Context Breakdown</Text>
+            <Text bold>Session Details</Text>
             <Button
               key="refresh-context"
               label={breakdownLoading ? 'Counting' : 'Refresh'}
@@ -253,6 +372,9 @@ export const register: Register = on => {
       )
     }
     const mcpServers = groupMcpTools(current.mcpTools)
+    const rateLimits = detailUsage?.rateLimits.filter(limit => (
+      limit.kind === 'five_hour' || limit.kind === 'seven_day'
+    )) ?? []
     const mcpLoadedTokens = mcpServers.reduce((total, server) => total + server.loadedTokens, 0)
     const selectedServer = mcpServers.find(server => server.name === selectedMcpServer)
     const maxMcpPage = selectedServer
@@ -291,7 +413,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box justifyContent="space-between" alignItems="center" width="100%">
-          <Text bold>Context Breakdown</Text>
+          <Text bold>Session Details</Text>
           <Button
             key="refresh-context"
             label={breakdownLoading ? 'Counting' : 'Refresh'}
@@ -311,6 +433,28 @@ export const register: Register = on => {
           </Box>
           {progressBar(personalPercent, barWidth, usageColor(personalPercent))}
           <Text dimColor>{current.model} · {tokenLabel(current.rawMaxTokens)} model window</Text>
+        </Box>
+
+        <Box flexDirection="column" gap={1} marginTop={1}>
+          <Text bold>Account usage</Text>
+          {rateLimits.length > 0 ? rateLimits.map(limit => (
+            <Box key={limit.kind} flexDirection="column">
+              <Box justifyContent="space-between" width="100%" gap={1}>
+                <Text>{rateLimitTitle(limit)}</Text>
+                <Text color={usageColor(limit.percentUsed)} bold>{limit.percentUsed}%</Text>
+              </Box>
+              {progressBar(limit.percentUsed, barWidth, usageColor(limit.percentUsed))}
+              {limit.resetsAt && <Text dimColor>{resetLabel(limit.resetsAt)}</Text>}
+            </Box>
+          )) : (
+            <Text dimColor>Rate-limit usage is not available yet.</Text>
+          )}
+          {detailUsage?.cost && (
+            <Box justifyContent="space-between" width="100%">
+              <Text>Session cost</Text>
+              <Text dimColor>${detailUsage.cost.usd.toFixed(2)}</Text>
+            </Box>
+          )}
         </Box>
 
         <Box flexDirection="column" gap={1}>

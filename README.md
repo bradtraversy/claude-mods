@@ -106,7 +106,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 
 | Mod | What it does | How to open or test it |
 | --- | --- | --- |
-| Session HUD | Shows session usage and opens a detailed context breakdown | Click `Details` beside the context meter |
+| Session HUD | Shows the current Git branch, context, and weekly usage with detailed session information | Switch branches or click `Usage` beside the context meter |
 | Impact Map | Tracks touched files and opens current Git diffs | Select an edited or created file in the Impact Map |
 | Tool Cards | Replaces normal tool-use rows with compact status cards | Ask Claude to read a file or run a command |
 | Safe Shell | Demonstrates a confirmation gate for a marked Bash command | Ask Claude to run `echo __SAFE_SHELL_DEMO__` |
@@ -117,20 +117,28 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 
 Session HUD draws a compact band above the prompt with:
 
+- The current Git branch
 - Current context usage
 - A visual progress bar
+- Overall weekly account usage
+
+Working branches appear in green. `main` and `master` appear in yellow as a reminder that you are on the default branch. Detached HEAD states are also yellow, and folders outside a Git repository say so directly. Session HUD checks every five seconds, so it also catches branch changes made in the built-in terminal or another terminal. Branches changed by a Claude Bash tool refresh immediately.
+
+Click the `Usage` button beside the progress bar to open Session Details. The pane shows:
+
+- Five-hour account usage with its reset time
+- Weekly account usage with its reset time
 - Session cost when Claude Code reports one
-- The first available rate-limit window, such as the five-hour limit
-
-Click `Details` beside the progress bar to open a Context Breakdown pane. Claude Code counts the current context and shows:
-
 - A color-coded meter for your personal context target
+
+Claude Code also counts the current context and shows:
+
 - Clean progress bars for messages, system content, tool schemas, memory, skills, and agents
 - Messages as one conversation total
 - Loaded MCP tokens grouped by server, with tool details available from a server picker
 - Free space and the automatic compaction buffer
 
-The full breakdown runs only when you click `Details` or press Refresh. It does not poll in the background. Claude Code provides a reliable total for Messages, but it does not provide a reliable token count for every individual message.
+The full breakdown runs only when you click `Usage` or press Refresh. It does not poll in the background. Claude Code provides a reliable total for Messages, but it does not provide a reliable token count for every individual message.
 
 The context percentage uses a configurable personal target. It does not change Claude's actual context window or automatic compaction behavior.
 
@@ -155,9 +163,11 @@ The meter is green below 70 percent, yellow from 70 through 89 percent, and red 
 1. Install and load `session-hud`.
 2. Send a prompt so Claude Code records session usage.
 3. Look directly above the prompt box.
-4. Confirm that context, cost, and the available rate limit appear.
-5. Click `Details` beside the progress bar.
-6. Confirm that the Context pane shows categories and any connected MCP tool schemas.
+4. Confirm that the current branch, context, cost, and available rate limit appear.
+5. Switch branches in the built-in terminal and confirm that the label updates within five seconds.
+6. Confirm that the `Usage` button shows your weekly percentage.
+7. Click `Usage` beside the progress bar.
+8. Confirm that Session Details shows five-hour usage, weekly usage, session cost, context categories, and any connected MCP tool schemas.
 
 Source: [`session-hud/hooks/register.tsx`](./session-hud/hooks/register.tsx)
 
