@@ -13,7 +13,7 @@
     {
       "name": "impact-map",
       "source": "./impact-map",
-      "description": "Shows files Claude has read and changed during the current session"
+      "description": "Tracks touched files and opens current Git diffs for changed files"
     },
     {
       "name": "tool-cards",

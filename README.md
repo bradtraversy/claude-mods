@@ -107,7 +107,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 | Mod | What it does | How to open or test it |
 | --- | --- | --- |
 | Session HUD | Shows session usage and opens a detailed context breakdown | Click `Details` beside the context meter |
-| Impact Map | Tracks files Claude reads, edits, and creates | Opens automatically, or enter `/impact-map` |
+| Impact Map | Tracks touched files and opens current Git diffs | Select an edited or created file in the Impact Map |
 | Tool Cards | Replaces normal tool-use rows with compact status cards | Ask Claude to read a file or run a command |
 | Safe Shell | Demonstrates a confirmation gate for a marked Bash command | Ask Claude to run `echo __SAFE_SHELL_DEMO__` |
 | Quality Console | Validates a local mod from inside Claude Code | Enter `/mod-check <path>` |
@@ -173,12 +173,17 @@ It labels each file as:
 
 The pane keeps the 14 most recent unique file paths. Reading or changing the same file again moves it to the newest position.
 
+Edited and created files are clickable. Selecting one opens a Diff pane with Claude Code's native unified-diff highlighting. Tracked files use the current working-tree diff against `HEAD`. Untracked files are shown as newly added files.
+
+The Diff pane reflects the file's current Git state, not a private history of only Claude's edits. If you or another tool changed the same file, those changes appear too. Read-only files are not clickable because they have no change to display.
+
 ### Test Impact Map
 
 1. Install and load `impact-map`.
 2. Ask Claude to read two files and edit one of them.
 3. Watch the Impact Map pane update.
-4. If the pane is closed, enter `/impact-map` to reopen it.
+4. Select the edited file and confirm that its highlighted diff opens in a new pane tab.
+5. If the Impact Map pane is closed, enter `/impact-map` to reopen it.
 
 Claude Code has one docked pane area. If Verification Ledger is also open, the two panes appear as tabs in that area rather than side by side.
 

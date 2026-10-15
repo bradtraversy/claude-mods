@@ -1,6 +1,6 @@
 {
   "name": "impact-map",
-  "version": "0.1.0",
-  "description": "Shows files Claude has read and changed during the current session",
+  "version": "0.2.0",
+  "description": "Tracks touched files and opens current Git diffs for changed files",
   "author": { "name": "Brad Traversy" }
 }
