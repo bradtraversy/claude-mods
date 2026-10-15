@@ -12,10 +12,16 @@ const PANE_PROPS: RenderPropsOf['Pane'] = {
 
 test('stays closed while empty and opens from the work-queue command', async ($, on) => {
   const opened: PaneOpenArgs[] = []
+  const registeredTools: string[] = []
 
   mock.clock(on)
   on('session.start', ($, event) => ({ cwd: event.cwd }))
   on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => {
+    registeredTools.push(event.name)
+    return { value: { tool: `mcp__work-queue__${event.name}` } }
+  })
+  on('prompt.compose', () => ({ sections: [] }))
   on('ui.open', ($, event) => {
     opened.push(event)
     return { value: { isPlaced: true } }
@@ -23,6 +29,17 @@ test('stays closed while empty and opens from the work-queue command', async ($,
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
   expect(opened).toHaveLength(0)
+  expect(registeredTools).toEqual(['task_create', 'task_update', 'task_list'])
+
+  const prompt = await $.prompt.compose({
+    model: 'claude-opus-5-5',
+    promptModel: 'claude-opus-5-5',
+    surfaces: ['terminal'],
+    tools: [],
+    outputStyle: null,
+    traits: [],
+  })
+  expect(prompt.sections.some(section => section.id === 'work-queue:workflow')).toBe(true)
 
   const result = await $.command.run({
     command: 'work-queue',
@@ -47,13 +64,13 @@ test('stays closed while empty and opens from the work-queue command', async ($,
   await ui.unmount()
 })
 
-test('groups task tool activity and opens dependency details on terminal and desktop', async ($, on) => {
+test('groups portable queue tools and opens dependency details on terminal and desktop', async ($, on) => {
   const opened: PaneOpenArgs[] = []
   const clock = mock.clock(on)
-  let nextTaskId = 1
 
   on('session.start', ($, event) => ({ cwd: event.cwd }))
   on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
   on('ui.open', ($, event) => {
     opened.push(event)
     return { value: { isPlaced: true } }
@@ -67,66 +84,53 @@ test('groups task tool activity and opens dependency details on terminal and des
       isPlaced: true,
     }],
   }))
-  on('tool.call', ($, event) => {
-    if (event.tool === 'TaskCreate') {
-      return {
-        result: {
-          task: { id: String(nextTaskId++), subject: event.subject },
-        },
-      }
-    }
-
-    if (event.tool === 'TaskUpdate') {
-      return {
-        result: {
-          success: true,
-          taskId: event.taskId,
-          updatedFields: [],
-        },
-      }
-    }
-
-    return { result: 'ok' }
-  })
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
 
-  await $.tool.call({
-    tool: 'TaskCreate',
+  const created = await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
     subject: 'Build the API',
     description: 'Implement the endpoint and response contract.',
     activeForm: 'Building the API',
   })
+  const createdResult = JSON.parse(String(created.result)) as { task: { id: string } }
+  expect(createdResult.task.id).toBe('queue-1')
   await $.tool.call({
-    tool: 'TaskCreate',
+    tool: 'mcp__work-queue__task_create',
     subject: 'Connect the interface',
     description: 'Use the new endpoint from the interface.',
     activeForm: 'Connecting the interface',
+    blockedBy: ['queue-1'],
   })
   await $.tool.call({
-    tool: 'TaskCreate',
+    tool: 'mcp__work-queue__task_create',
     subject: 'Write the documentation',
     description: 'Document the new workflow.',
     activeForm: 'Writing the documentation',
   })
   await $.tool.call({
-    tool: 'TaskCreate',
+    tool: 'mcp__work-queue__task_create',
     subject: 'Confirm the scope',
     description: 'Review the agreed feature boundary.',
     activeForm: 'Confirming the scope',
   })
   await $.tool.call({
-    tool: 'TaskUpdate',
-    taskId: '1',
+    tool: 'mcp__work-queue__task_update',
+    taskId: 'queue-1',
     status: 'in_progress',
     owner: 'api-agent',
-    addBlocks: ['2'],
   })
   await $.tool.call({
-    tool: 'TaskUpdate',
-    taskId: '4',
+    tool: 'mcp__work-queue__task_update',
+    taskId: 'queue-4',
     status: 'completed',
   })
+  const listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  const listedResult = JSON.parse(String(listed.result)) as {
+    tasks: Array<{ source: string; editable: boolean }>
+  }
+  expect(listedResult.tasks).toHaveLength(4)
+  expect(listedResult.tasks.every(task => task.source === 'work_queue' && task.editable)).toBe(true)
   await clock.advance(65_000)
 
   expect(opened).toHaveLength(1)
@@ -143,21 +147,26 @@ test('groups task tool activity and opens dependency details on terminal and des
     })
 
     expect(await ui.find({ type: 'Text', text: 'Work Queue' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '3 open  1 done' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '3 open' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'toggle-completed' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Working' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Blocked' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Ready' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Done' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Build the API' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'api-agent' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '1m' })).toBeDefined()
 
-    await ui.press({ key: 'task-view:2' })
+    await ui.press({ key: 'toggle-completed' })
+    expect(await ui.find({ type: 'Text', text: 'Done' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Confirm the scope' })).toBeDefined()
+    await ui.press({ key: 'toggle-completed' })
+
+    await ui.press({ key: 'task-view:queue-2' })
     expect(await ui.find({ type: 'Text', text: 'Connect the interface' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Blocked by' })).toBeDefined()
-    expect(await ui.find({ type: 'Button', key: 'dependency:1' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'dependency:queue-1' })).toBeDefined()
 
-    await ui.press({ key: 'dependency:1' })
+    await ui.press({ key: 'dependency:queue-1' })
     expect(await ui.find({ type: 'Text', text: 'Build the API' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Blocks' })).toBeDefined()
 
@@ -165,12 +174,24 @@ test('groups task tool activity and opens dependency details on terminal and des
     expect(await ui.find({ type: 'Text', text: 'Work Queue' })).toBeDefined()
     await ui.unmount()
   }
+
+  await $.tool.call({
+    tool: 'mcp__work-queue__task_update',
+    taskId: 'queue-1',
+    status: 'completed',
+  })
+  const unblocked = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  const unblockedResult = JSON.parse(String(unblocked.result)) as {
+    tasks: Array<{ id: string; group: string }>
+  }
+  expect(unblockedResult.tasks.find(task => task.id === 'queue-2')).toMatchObject({ group: 'Ready' })
 })
 
 test('captures classic task events that do not pass through task tools', async ($, on) => {
   mock.clock(on)
   on('session.start', ($, event) => ({ cwd: event.cwd }))
   on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
   on('classic.TaskCreated', () => ({}))
   on('classic.TaskCompleted', () => ({}))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -197,6 +218,7 @@ test('captures classic task events that do not pass through task tools', async (
     props: PANE_PROPS,
   })
 
+  await ui.press({ key: 'toggle-completed' })
   expect(await ui.find({ type: 'Text', text: 'Done' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Review the implementation' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'reviewer' })).toBeDefined()
@@ -207,6 +229,7 @@ test('hydrates task lists and task details returned by Claude tools', async ($, 
   mock.clock(on)
   on('session.start', ($, event) => ({ cwd: event.cwd }))
   on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('tool.call', ($, event) => {
     if (event.tool === 'TaskList') {
@@ -254,6 +277,22 @@ test('hydrates task lists and task details returned by Claude tools', async ($, 
   await $.tool.call({ tool: 'TaskList' })
   await $.tool.call({ tool: 'TaskGet', taskId: '10' })
 
+  const listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  const listedResult = JSON.parse(String(listed.result)) as {
+    tasks: Array<{ id: string; source: string; editable: boolean }>
+  }
+  expect(listedResult.tasks.find(task => task.id === '10')).toMatchObject({
+    source: 'claude',
+    editable: false,
+  })
+
+  const denied = await $.tool.call({
+    tool: 'mcp__work-queue__task_update',
+    taskId: '10',
+    status: 'completed',
+  })
+  expect(denied.deny).toBe("Task 10 is managed by Claude's native task tools. Use TaskUpdate instead.")
+
   const ui = await $.ui.mount({
     plugin: 'work-queue',
     surface: 'desktop',
@@ -273,4 +312,43 @@ test('hydrates task lists and task details returned by Claude tools', async ($, 
   })).toBeDefined()
   expect(await ui.find({ type: 'Button', key: 'dependency:11' })).toBeDefined()
   await ui.unmount()
+})
+
+test('rejects unknown blockers without creating phantom tasks', async ($, on) => {
+  mock.clock(on)
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+
+  const rejectedCreate = await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Blocked task',
+    blockedBy: ['missing'],
+  })
+  expect(rejectedCreate.deny).toBe('Blocking task missing was not found.')
+
+  const emptyList = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  expect(JSON.parse(String(emptyList.result))).toMatchObject({ tasks: [] })
+
+  await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Existing task',
+  })
+  const rejectedUpdate = await $.tool.call({
+    tool: 'mcp__work-queue__task_update',
+    taskId: 'queue-1',
+    subject: 'Should not be applied',
+    blockedBy: ['missing'],
+  })
+  expect(rejectedUpdate.deny).toBe('Blocking task missing was not found.')
+
+  const finalList = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  const finalResult = JSON.parse(String(finalList.result)) as {
+    tasks: Array<{ subject: string; blockedBy: string[] }>
+  }
+  expect(finalResult.tasks).toHaveLength(1)
+  expect(finalResult.tasks[0]).toMatchObject({ subject: 'Existing task', blockedBy: [] })
 })

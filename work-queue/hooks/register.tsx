@@ -2,9 +2,13 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 const PANE = 'work-queue'
 const CLOCK_INTERVAL_MS = 5_000
+const CREATE_TOOL = 'mcp__work-queue__task_create'
+const UPDATE_TOOL = 'mcp__work-queue__task_update'
+const LIST_TOOL = 'mcp__work-queue__task_list'
 
 type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted'
 type TaskGroup = 'Working' | 'Blocked' | 'Ready' | 'Done'
+type TaskSource = 'work_queue' | 'claude'
 
 type WorkTask = {
   id: string
@@ -15,6 +19,7 @@ type WorkTask = {
   owner: string
   blockedBy: string[]
   blocks: string[]
+  source: TaskSource
   createdAt: number
   updatedAt: number
   statusChangedAt: number
@@ -37,11 +42,39 @@ type TaskDetail = {
   blockedBy: string[]
 }
 
+type OwnedTaskCreateInput = {
+  subject: string
+  description?: string
+  activeForm?: string
+  owner?: string
+  blockedBy?: string[]
+}
+
+type OwnedTaskUpdateInput = {
+  taskId: string
+  status?: Exclude<TaskStatus, 'deleted'>
+  subject?: string
+  description?: string
+  activeForm?: string
+  owner?: string
+  blockedBy?: string[]
+}
+
+declare module 'claude-code' {
+  interface McpToolInputs {
+    'mcp__work-queue__task_create': OwnedTaskCreateInput
+    'mcp__work-queue__task_update': OwnedTaskUpdateInput
+    'mcp__work-queue__task_list': Record<string, unknown>
+  }
+}
+
 const tasks = new Map<string, WorkTask>()
 let selectedTaskId = ''
 let currentTime = 0
 let didAutoOpen = false
+let showCompleted = false
 let clockTimer: Timer | null = null
+let nextTaskNumber = 1
 
 function unique(values: string[]): string[] {
   return [...new Set(values)]
@@ -52,11 +85,18 @@ function resetState(): void {
   selectedTaskId = ''
   currentTime = 0
   didAutoOpen = false
+  showCompleted = false
+  nextTaskNumber = 1
   clockTimer?.cancel()
   clockTimer = null
 }
 
-function ensureTask(id: string, now: number, subject = `Task ${id}`): WorkTask {
+function ensureTask(
+  id: string,
+  now: number,
+  subject = `Task ${id}`,
+  source: TaskSource = 'claude',
+): WorkTask {
   const existing = tasks.get(id)
   if (existing) return existing
 
@@ -69,6 +109,7 @@ function ensureTask(id: string, now: number, subject = `Task ${id}`): WorkTask {
     owner: '',
     blockedBy: [],
     blocks: [],
+    source,
     createdAt: now,
     updatedAt: now,
     statusChangedAt: now,
@@ -143,6 +184,7 @@ function taskReference(id: string): WorkTask {
     owner: '',
     blockedBy: [],
     blocks: [],
+    source: 'claude',
     createdAt: currentTime,
     updatedAt: currentTime,
     statusChangedAt: currentTime,
@@ -218,6 +260,150 @@ function taskDetailResult(value: unknown): TaskDetail | null {
   }
 }
 
+function inputRecord(event: unknown): Record<string, unknown> {
+  return event && typeof event === 'object' ? event as Record<string, unknown> : {}
+}
+
+function stringInput(input: Record<string, unknown>, key: string): string | undefined {
+  const value = input[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function stringListInput(input: Record<string, unknown>, key: string): string[] | undefined {
+  const value = input[key]
+  if (!Array.isArray(value)) return undefined
+  return unique(value
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean))
+}
+
+function publicTask(task: WorkTask): Record<string, unknown> {
+  return {
+    id: task.id,
+    subject: task.subject,
+    description: task.description,
+    status: task.status,
+    group: taskGroup(task),
+    owner: task.owner,
+    blockedBy: task.blockedBy,
+    blocks: task.blocks,
+    source: task.source,
+    editable: task.source === 'work_queue',
+  }
+}
+
+function toolResult(value: Record<string, unknown>): { result: string } {
+  return { result: JSON.stringify(value) }
+}
+
+function toolError(message: string): { deny: string } {
+  return { deny: message }
+}
+
+function blockerError(taskId: string | undefined, blockedBy: string[]): string | null {
+  if (taskId && blockedBy.includes(taskId)) {
+    return `Task ${taskId} cannot block itself.`
+  }
+
+  const missing = blockedBy.find(id => {
+    const blocker = tasks.get(id)
+    return !blocker || blocker.status === 'deleted'
+  })
+  return missing ? `Blocking task ${missing} was not found.` : null
+}
+
+function setBlockedBy(task: WorkTask, blockedBy: string[]): void {
+  for (const blockerId of task.blockedBy) {
+    const blocker = tasks.get(blockerId)
+    if (blocker) blocker.blocks = blocker.blocks.filter(id => id !== task.id)
+  }
+
+  task.blockedBy = unique(blockedBy.filter(id => id !== task.id))
+  for (const blockerId of task.blockedBy) {
+    const blocker = tasks.get(blockerId)
+    if (blocker) blocker.blocks = unique([...blocker.blocks, task.id])
+  }
+}
+
+async function createOwnedTask(
+  $: EngineInterface,
+  event: unknown,
+): Promise<{ result: string } | { deny: string }> {
+  const input = inputRecord(event)
+  const subject = stringInput(input, 'subject')?.trim()
+  if (!subject) {
+    return toolError('A task subject is required.')
+  }
+
+  const blockedBy = stringListInput(input, 'blockedBy') ?? []
+  const invalidBlocker = blockerError(undefined, blockedBy)
+  if (invalidBlocker) return toolError(invalidBlocker)
+
+  const now = await $.clock.now()
+  currentTime = now
+  let id = `queue-${nextTaskNumber++}`
+  while (tasks.has(id)) id = `queue-${nextTaskNumber++}`
+  const task = ensureTask(id, now, subject, 'work_queue')
+  task.subject = subject
+  task.description = stringInput(input, 'description')?.trim() ?? ''
+  task.activeForm = stringInput(input, 'activeForm')?.trim() ?? ''
+  task.owner = stringInput(input, 'owner')?.trim() ?? ''
+  setBlockedBy(task, blockedBy)
+  task.updatedAt = now
+  changed($)
+
+  return toolResult({ task: publicTask(task) })
+}
+
+async function updateOwnedTask(
+  $: EngineInterface,
+  event: unknown,
+): Promise<{ result: string } | { deny: string }> {
+  const input = inputRecord(event)
+  const id = stringInput(input, 'taskId')?.trim()
+  const task = id ? tasks.get(id) : undefined
+  if (!task || task.status === 'deleted') {
+    return toolError(`Task ${id || '(missing id)'} was not found.`)
+  }
+  if (task.source !== 'work_queue') {
+    return toolError(`Task ${id} is managed by Claude's native task tools. Use TaskUpdate instead.`)
+  }
+
+  const blockedBy = stringListInput(input, 'blockedBy')
+  const invalidBlocker = blockedBy ? blockerError(id, blockedBy) : null
+  if (invalidBlocker) return toolError(invalidBlocker)
+
+  const now = await $.clock.now()
+  currentTime = now
+  const subject = stringInput(input, 'subject')?.trim()
+  const description = stringInput(input, 'description')
+  const activeForm = stringInput(input, 'activeForm')
+  const owner = stringInput(input, 'owner')
+  const status = stringInput(input, 'status')
+
+  if (subject) task.subject = subject
+  if (description !== undefined) task.description = description.trim()
+  if (activeForm !== undefined) task.activeForm = activeForm.trim()
+  if (owner !== undefined) task.owner = owner.trim()
+  if (blockedBy) setBlockedBy(task, blockedBy)
+  if (status === 'pending' || status === 'in_progress' || status === 'completed') {
+    setStatus(task, status, now)
+  }
+  task.updatedAt = now
+  changed($)
+
+  return toolResult({ task: publicTask(task) })
+}
+
+function listOwnedTasks(): { result: string } {
+  return toolResult({
+    tasks: [...tasks.values()]
+      .filter(task => task.status !== 'deleted')
+      .map(publicTask),
+  })
+}
+
 function maybeOpen($: EngineInterface): void {
   if (didAutoOpen || tasks.size === 0) return
   didAutoOpen = true
@@ -247,11 +433,85 @@ export const register: Register = on => {
       name: 'work-queue',
       description: 'Open the current Claude task queue',
     })
+    await $.tool.register({
+      name: 'task_create',
+      description: 'Add one concrete task to the Work Queue. Use this for substantive multi-step work and when the user asks for a task list. Returns the task id needed for dependencies and updates.',
+      isDeferred: false,
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          subject: { type: 'string', description: 'Short action-oriented task title.' },
+          description: { type: 'string', description: 'What completing the task requires.' },
+          activeForm: { type: 'string', description: 'Present-tense label shown while working.' },
+          owner: { type: 'string', description: 'Optional owner or agent name.' },
+          blockedBy: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Task ids that must finish before this task can start.',
+          },
+        },
+        required: ['subject'],
+      },
+    })
+    await $.tool.register({
+      name: 'task_update',
+      description: 'Update a Work Queue task as work starts, changes, becomes blocked, or finishes. Keep the queue accurate while working.',
+      isDeferred: false,
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          taskId: { type: 'string', description: 'The Work Queue task id.' },
+          status: {
+            type: 'string',
+            enum: ['pending', 'in_progress', 'completed'],
+            description: 'The task lifecycle state.',
+          },
+          subject: { type: 'string', description: 'Replacement task title.' },
+          description: { type: 'string', description: 'Replacement task description.' },
+          activeForm: { type: 'string', description: 'Present-tense label shown while working.' },
+          owner: { type: 'string', description: 'Owner or agent name. Use an empty string to clear it.' },
+          blockedBy: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Complete replacement list of blocking task ids.',
+          },
+        },
+        required: ['taskId'],
+      },
+    })
+    await $.tool.register({
+      name: 'task_list',
+      description: 'Read the current Work Queue tasks, statuses, owners, and dependencies before planning or updating work.',
+      isDeferred: false,
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    })
     clockTimer = $.clock.every(CLOCK_INTERVAL_MS, () => {
       void tickOpenPane($)
     })
     return next(event)
   })
+
+  on('prompt.compose', async ($, event, next) => {
+    const result = await next(event)
+    if (event.traits.includes('teammate')) return result
+
+    return {
+      sections: [
+        ...result.sections,
+        {
+          id: 'work-queue:workflow',
+          scope: 'session',
+          text: 'Use the Work Queue tools for substantive work with several concrete steps or whenever the user asks for a task list. Create the tasks before implementation, mark the current task in progress, keep blockers accurate, and complete each task when it is actually done. Do not create queue tasks for simple questions or one-step actions.',
+        },
+      ],
+    }
+  }).catch(($, event, next) => next(event))
 
   on('session.end', ($, event, next) => {
     clockTimer?.cancel()
@@ -299,6 +559,10 @@ export const register: Register = on => {
   }).catch(($, event, next) => next(event))
 
   on('tool.call', async ($, event, next) => {
+    if (event.tool === CREATE_TOOL) return createOwnedTask($, event)
+    if (event.tool === UPDATE_TOOL) return updateOwnedTask($, event)
+    if (event.tool === LIST_TOOL) return listOwnedTasks()
+
     const result = await next(event)
     if (result.isError || result.deny) return result
 
@@ -390,7 +654,12 @@ export const register: Register = on => {
     }
 
     return result
-  }).catch(($, event, next) => next(event))
+  }).catch(($, event, next) => {
+    if (event.tool === CREATE_TOOL || event.tool === UPDATE_TOOL || event.tool === LIST_TOOL) {
+      return toolError('Work Queue could not update the task list.')
+    }
+    return next(event)
+  })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, event) => {
     const { Box, Button, Text } = $.ui.resolve(event)
@@ -468,23 +737,41 @@ export const register: Register = on => {
       )
     }
 
-    const visibleTasks = [...tasks.values()].filter(task => task.status !== 'deleted')
-    const openCount = visibleTasks.filter(task => task.status !== 'completed').length
-    const doneCount = visibleTasks.length - openCount
+    const sessionTasks = [...tasks.values()].filter(task => task.status !== 'deleted')
+    const openTasks = sessionTasks.filter(task => task.status !== 'completed')
+    const doneCount = sessionTasks.length - openTasks.length
+    const visibleTasks = showCompleted ? sessionTasks : openTasks
+    const openCount = openTasks.length
     const groups: TaskGroup[] = ['Working', 'Blocked', 'Ready', 'Done']
 
     return (
       <Box flexDirection="column" gap={1}>
         <Box justifyContent="space-between" width="100%">
           <Text bold>Work Queue</Text>
-          {visibleTasks.length > 0 && <Text dimColor>{openCount} open  {doneCount} done</Text>}
+          <Box gap={1}>
+            {sessionTasks.length > 0 && <Text dimColor>{openCount} open</Text>}
+            {doneCount > 0 && (
+              <Button
+                key="toggle-completed"
+                label={`${showCompleted ? 'Hide' : 'Show'} ${doneCount} done`}
+                plain
+                dimColor
+                onPress={() => {
+                  showCompleted = !showCompleted
+                  $.ui.invalidate('ui.render')
+                }}
+              />
+            )}
+          </Box>
         </Box>
 
-        {visibleTasks.length === 0 ? (
+        {sessionTasks.length === 0 ? (
           <Box flexDirection="column">
             <Text dimColor>No tasks in this session.</Text>
-            <Text dimColor>The queue updates when Claude creates a task.</Text>
+            <Text dimColor>Ask Claude to break substantive work into tasks.</Text>
           </Box>
+        ) : openCount === 0 && !showCompleted ? (
+          <Text dimColor>All tasks completed.</Text>
         ) : groups.map(group => {
           const groupTasks = visibleTasks
             .filter(task => taskGroup(task) === group)
