@@ -106,7 +106,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 
 | Mod | What it does | How to open or test it |
 | --- | --- | --- |
-| Session HUD | Shows context usage, session cost, and rate-limit usage above the prompt | Visible above the prompt after the session reports usage |
+| Session HUD | Shows session usage and opens a detailed context breakdown | Click `Details` beside the context meter |
 | Impact Map | Tracks files Claude reads, edits, and creates | Opens automatically, or enter `/impact-map` |
 | Tool Cards | Replaces normal tool-use rows with compact status cards | Ask Claude to read a file or run a command |
 | Safe Shell | Demonstrates a confirmation gate for a marked Bash command | Ask Claude to run `echo __SAFE_SHELL_DEMO__` |
@@ -121,6 +121,16 @@ Session HUD draws a compact band above the prompt with:
 - A visual progress bar
 - Session cost when Claude Code reports one
 - The first available rate-limit window, such as the five-hour limit
+
+Click `Details` beside the progress bar to open a Context Breakdown pane. Claude Code counts the current context and shows:
+
+- A color-coded meter for your personal context target
+- Clean progress bars for messages, system content, tool schemas, memory, skills, and agents
+- Messages as one conversation total
+- Loaded MCP tokens grouped by server, with tool details available from a server picker
+- Free space and the automatic compaction buffer
+
+The full breakdown runs only when you click `Details` or press Refresh. It does not poll in the background. Claude Code provides a reliable total for Messages, but it does not provide a reliable token count for every individual message.
 
 The context percentage uses a configurable personal target. It does not change Claude's actual context window or automatic compaction behavior.
 
@@ -138,7 +148,7 @@ Change `300_000` to the number you want to treat as 100 percent. For example:
 export const CONTEXT_MAX_TOKENS = 200_000
 ```
 
-The meter turns yellow at 80 percent and red at 100 percent. Its visual fill stops at 100 percent, but the numeric percentage can go higher.
+The meter is green below 70 percent, yellow from 70 through 89 percent, and red at 90 percent or higher. Its visual fill stops at 100 percent, but the numeric percentage can go higher.
 
 ### Test Session HUD
 
@@ -146,6 +156,8 @@ The meter turns yellow at 80 percent and red at 100 percent. Its visual fill sto
 2. Send a prompt so Claude Code records session usage.
 3. Look directly above the prompt box.
 4. Confirm that context, cost, and the available rate limit appear.
+5. Click `Details` beside the progress bar.
+6. Confirm that the Context pane shows categories and any connected MCP tool schemas.
 
 Source: [`session-hud/hooks/register.tsx`](./session-hud/hooks/register.tsx)
 
