@@ -34,6 +34,11 @@
       "name": "verification-ledger",
       "source": "./verification-ledger",
       "description": "Tracks local verification commands and GitHub Actions for the current commit"
+    },
+    {
+      "name": "agent-pulse",
+      "source": "./agent-pulse",
+      "description": "Shows live subagent activity and recent transcripts in a session pane"
     }
   ]
 }
