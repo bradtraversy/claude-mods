@@ -39,6 +39,11 @@
       "name": "agent-pulse",
       "source": "./agent-pulse",
       "description": "Shows live subagent activity and recent transcripts in a session pane"
+    },
+    {
+      "name": "work-queue",
+      "source": "./work-queue",
+      "description": "Shows Claude session tasks grouped by working, blocked, ready, and done"
     }
   ]
 }

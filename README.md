@@ -2,7 +2,7 @@
 
 A collection of personal Claude Code mods by Brad Traversy. These mods add useful session information, interface customizations, safety demonstrations, and verification tools to Claude Code.
 
-Every mod is a small, independent Claude Code plugin written in TypeScript. Install only the ones you want, or run all seven together.
+Every mod is a small, independent Claude Code plugin written in TypeScript. Install only the ones you want, or run all eight together.
 
 > [!IMPORTANT]
 > Mods run inside Claude Code with your user permissions. They can see session events, start processes, access files, and make network requests. Read the source before installing any mod, including these.
@@ -66,7 +66,7 @@ Install one mod:
 claude plugin install session-hud@traversy-mods
 ```
 
-Install all seven:
+Install all eight:
 
 ```bash
 claude plugin install session-hud@traversy-mods
@@ -76,6 +76,7 @@ claude plugin install safe-shell@traversy-mods
 claude plugin install quality-console@traversy-mods
 claude plugin install verification-ledger@traversy-mods
 claude plugin install agent-pulse@traversy-mods
+claude plugin install work-queue@traversy-mods
 ```
 
 Inside an interactive session, the same commands start with `/plugin install` instead of `claude plugin install`.
@@ -114,6 +115,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 | Quality Console | Validates a local mod from inside Claude Code | Enter `/mod-check <path>` |
 | Verification Ledger | Tracks local checks, Git state, and GitHub Actions | Enter `/checks` |
 | Agent Pulse | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agents` |
+| Work Queue | Groups session tasks by working, blocked, ready, and done | Ask Claude to create tasks or enter `/work-queue` |
 
 ## Session HUD
 
@@ -415,6 +417,38 @@ Claude Code may deny transcript access for an agent running in another process, 
 
 Source: [`agent-pulse/hooks/register.tsx`](./agent-pulse/hooks/register.tsx)
 
+## Work Queue
+
+Work Queue opens a `Tasks` pane when Claude creates the first task in the current session. It turns Claude's task state into four focused groups:
+
+- `Working` for tasks in progress
+- `Blocked` for pending tasks with unfinished dependencies
+- `Ready` for pending tasks that can start
+- `Done` for completed tasks
+
+Each row shows the task subject, owner when one is assigned, and how long it has been in its current state. Select `View` to see the full description, owner, creation and update times, tasks that block it, and tasks that depend on it. Dependencies are clickable, so you can move through the work graph without leaving the pane.
+
+The pane does not open in an empty session and does not take keyboard focus when it opens automatically. Enter `/work-queue` to open it manually or bring it back after closing it.
+
+Work Queue observes `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet` tool calls. It also observes Claude Code's task-created and task-completed lifecycle events, which catches task activity that did not pass through those tools. It never creates, updates, completes, or deletes a task itself.
+
+Task history lives only in memory for the current session. Reloading the mod or starting a new session clears the pane. The mod does not call a model, start a process, read project files, make a network request, or persist task data.
+
+Claude Code does not deliver classic task lifecycle events to user-installed plugins when an organization manages the installation. Normal task tool calls still appear, but a task created in another process may be missing if it produces only a lifecycle event.
+
+### Test Work Queue
+
+1. Install and load `work-queue`.
+2. Enter `/work-queue` and confirm that the empty state says there are no tasks in the session.
+3. Ask Claude to create a three-step task plan where the interface task depends on the API task.
+4. Ask Claude to start the API task.
+5. Confirm that the pane shows one task under `Working`, the dependent task under `Blocked`, and the remaining task under `Ready`.
+6. Select `View` on the blocked task and confirm that the API task appears under `Blocked by`.
+7. Complete the API task and confirm that it moves to `Done` while the dependent task moves to `Ready`.
+8. Repeat the check in a terminal session and a local session in the desktop Code tab.
+
+Source: [`work-queue/hooks/register.tsx`](./work-queue/hooks/register.tsx)
+
 ## How the mods work together
 
 The mods have separate responsibilities, so their interface elements do not duplicate each other:
@@ -424,10 +458,11 @@ The mods have separate responsibilities, so their interface elements do not dupl
 - Impact Map owns a file-activity pane.
 - Verification Ledger owns a checks pane.
 - Agent Pulse owns a live subagent pane.
+- Work Queue owns a task-state pane.
 - Quality Console owns `/mod-check`.
 - Safe Shell owns only its marked-command confirmation.
 
-Impact Map, Verification Ledger, and Agent Pulse share Claude Code's single docked pane area as separate tabs. All other mods use different interface regions or event types.
+Impact Map, Verification Ledger, Agent Pulse, and Work Queue share Claude Code's single docked pane area as separate tabs. Agent Pulse shows who is working, while Work Queue shows what work exists and what is blocked. All other mods use different interface regions or event types.
 
 ## Develop locally from scratch
 
@@ -451,6 +486,7 @@ claude plugin validate ./safe-shell
 claude plugin validate ./quality-console
 claude plugin validate ./verification-ledger
 claude plugin validate ./agent-pulse
+claude plugin validate ./work-queue
 ```
 
 Validation reads the mod without executing it. Review the reported `hooks:` and `calls:` lines to see what it handles and which Claude Code APIs it uses.
@@ -465,6 +501,7 @@ claude plugin test ./safe-shell
 claude plugin test ./quality-console
 claude plugin test ./verification-ledger
 claude plugin test ./agent-pulse
+claude plugin test ./work-queue
 ```
 
 The interface tests mount each visual mod on simulated terminal and desktop surfaces.
