@@ -1,6 +1,6 @@
 {
   "name": "session-hud",
-  "version": "0.1.0",
-  "description": "Shows session context, cost, and rate-limit usage above the prompt",
+  "version": "0.2.0",
+  "description": "Shows session usage above the prompt and opens a detailed context breakdown",
   "author": { "name": "Brad Traversy" }
 }

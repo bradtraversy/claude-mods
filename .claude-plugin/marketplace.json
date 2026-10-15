@@ -8,7 +8,7 @@
     {
       "name": "session-hud",
       "source": "./session-hud",
-      "description": "Shows context usage, session cost, and rate-limit usage above the prompt"
+      "description": "Shows session usage above the prompt and opens a detailed context breakdown"
     },
     {
       "name": "impact-map",
