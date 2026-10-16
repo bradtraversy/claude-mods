@@ -29,7 +29,7 @@ test('stays closed while empty and opens from the work-queue command', async ($,
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
   expect(opened).toHaveLength(0)
-  expect(registeredTools).toEqual(['task_create', 'task_update', 'task_list'])
+  expect(registeredTools).toEqual(['task_create', 'task_update', 'task_list', 'task_clear'])
 
   const prompt = await $.prompt.compose({
     model: 'claude-opus-5-5',
@@ -40,6 +40,8 @@ test('stays closed while empty and opens from the work-queue command', async ($,
     traits: [],
   })
   expect(prompt.sections.some(section => section.id === 'work-queue:workflow')).toBe(true)
+  expect(prompt.sections.find(section => section.id === 'work-queue:workflow')?.text)
+    .toContain('task_clear')
 
   const result = await $.command.run({
     command: 'work-queue',
@@ -62,6 +64,47 @@ test('stays closed while empty and opens from the work-queue command', async ($,
 
   expect(await ui.find({ type: 'Text', text: 'No tasks in this session.' })).toBeDefined()
   await ui.unmount()
+})
+
+test('clears every task through the model-callable tool and resets task ids', async ($, on) => {
+  mock.clock(on)
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+  await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Build the API',
+  })
+  await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Connect the interface',
+    blockedBy: ['queue-1'],
+  })
+
+  const cleared = await $.tool.call({ tool: 'mcp__work-queue__task_clear' })
+  expect(JSON.parse(String(cleared.result))).toEqual({ cleared: 2 })
+
+  const listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  expect(JSON.parse(String(listed.result))).toEqual({ tasks: [] })
+
+  const ui = await $.ui.mount({
+    plugin: 'work-queue',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'work-queue',
+    props: PANE_PROPS,
+  })
+  expect(await ui.find({ type: 'Text', text: 'No tasks in this session.' })).toBeDefined()
+  await ui.unmount()
+
+  const created = await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Start a new plan',
+  })
+  expect(JSON.parse(String(created.result))).toMatchObject({ task: { id: 'queue-1' } })
 })
 
 test('groups portable queue tools and opens dependency details on terminal and desktop', async ($, on) => {

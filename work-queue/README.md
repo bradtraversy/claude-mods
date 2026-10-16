@@ -25,11 +25,12 @@ The pane does not open in an empty session and does not take keyboard focus when
 
 ## Model-callable tools
 
-The mod currently registers three tools:
+The mod registers four tools:
 
 - `task_create` adds a task and returns its queue id
 - `task_update` changes its status, owner, description, or blockers
 - `task_list` reads the current queue before Claude plans or updates work
+- `task_clear` removes every task when you ask Claude to clear or reset the Work Queue
 
 A short session instruction tells Claude to use these tools for substantive work with several concrete steps, or whenever you explicitly ask for a task list. It also tells Claude not to create tasks for simple questions or one-step actions. The queue reflects real tool calls. It does not guess tasks from ordinary chat text or execute tasks itself.
 
@@ -49,7 +50,8 @@ Claude Code does not deliver the session instruction or classic task lifecycle e
 6. Select `View` on the blocked task and confirm that the API task appears under `Blocked by`.
 7. Complete the API task and confirm that it leaves the active list while the dependent task moves to `Ready`.
 8. Select `Show 1 done` and confirm that the completed API task appears under `Done`.
-9. Repeat the same check in a terminal session and a local session in the Desktop Code tab.
+9. Ask Claude to clear the Work Queue and confirm that the pane returns to its empty state.
+10. Repeat the same check in a terminal session and a local session in the Desktop Code tab.
 
 ## Source
 
