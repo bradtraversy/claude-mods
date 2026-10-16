@@ -14,13 +14,15 @@ Restart the session or enter `/reload-plugins` after installation.
 
 ## Usage
 
-Open the pane with:
+The pane opens automatically after Claude finishes the first recognized verification command in a session. It opens without taking keyboard focus.
+
+Open it manually or bring it back after closing it with:
 
 ```text
 /checks
 ```
 
-The pane does not currently open automatically. When another pane mod is open, Claude Code places them in tabs within the same docked pane area.
+When another pane mod is open, Claude Code places them in tabs within the same docked pane area.
 
 ## Recognized local commands
 
@@ -83,8 +85,8 @@ Change the values to control how often the open pane refreshes and how many work
 ## Test Verification Ledger
 
 1. Install and load `verification-ledger` in a Git repository.
-2. Enter `/checks`.
-3. Ask Claude to run the project's test command.
+2. Ask Claude to run the project's test command.
+3. Confirm that the Checks pane opens without taking keyboard focus.
 4. Confirm that `Tests` appears with `PASS` or `FAIL`.
 5. Ask Claude to edit a file.
 6. Reopen or refresh `/checks` and confirm that the earlier result is `STALE`.

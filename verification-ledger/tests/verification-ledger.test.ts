@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import type { RenderPropsOf } from 'claude-code'
+import type { PaneOpenArgs, RenderPropsOf } from 'claude-code'
 
 const PROPS: RenderPropsOf['Pane'] = {
   title: 'Checks',
@@ -12,8 +12,12 @@ const PROPS: RenderPropsOf['Pane'] = {
 
 test('shows local checks, staleness, and GitHub CI on terminal and desktop', async ($, on) => {
   let dirty = false
+  const opened: PaneOpenArgs[] = []
 
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', ($, event) => {
+    opened.push(event)
+    return { value: { isPlaced: true } }
+  })
   on('ui.log', () => ({ value: undefined }))
   on('session.cwd', () => ({ value: '/project' }))
   on('clock.now', () => ({ value: 1_700_000_000_000 }))
@@ -72,13 +76,21 @@ test('shows local checks, staleness, and GitHub CI on terminal and desktop', asy
   })
 
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect(opened).toHaveLength(1)
+  expect(opened[0]).toMatchObject({ id: 'verification-ledger', title: 'Checks' })
+  expect(opened[0]?.focus).toBeUndefined()
+
   await $.tool.call({ tool: 'Bash', command: 'touch src/app.ts' })
+  expect(opened).toHaveLength(1)
+
   await $.command.run({
     command: 'checks',
     args: '',
     origin: { kind: 'composer' },
     presentation: { isFullscreen: true, columns: 160 },
   })
+  expect(opened).toHaveLength(2)
+  expect(opened[1]).toMatchObject({ id: 'verification-ledger', focus: true })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({

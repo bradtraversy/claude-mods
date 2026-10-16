@@ -7,6 +7,19 @@ Every mod is a small, independent Claude Code plugin written in TypeScript. Inst
 > [!IMPORTANT]
 > Mods run inside Claude Code with your user permissions. They can see session events, start processes, access files, and make network requests. Read the source before installing any mod, including these.
 
+## Included mods
+
+| Mod | What it does | How to open or test it |
+| --- | --- | --- |
+| [Session HUD](./session-hud/README.md) | Shows the current Git branch, context, and weekly usage with detailed session information | Switch branches or click `Details` beside the context meter |
+| [Impact Map](./impact-map/README.md) | Tracks touched files and opens current Git diffs | Select an edited or created file in the Impact Map |
+| [Tool Cards](./tool-cards/README.md) | Replaces normal tool-use rows with compact status cards | Ask Claude to read a file or run a command |
+| [Verification Ledger](./verification-ledger/README.md) | Tracks local checks, Git state, and GitHub Actions | Run a recognized check or enter `/checks` |
+| [Agent Pulse](./agent-pulse/README.md) | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agent-pulse` |
+| [Work Queue](./work-queue/README.md) | Groups session tasks by working, blocked, ready, and done | Ask Claude to create tasks or enter `/work-queue` |
+
+Each mod README contains its installation command, usage guide, test steps, source link, and interface image when the mod has a visual surface. The images are source-accurate mockups of the current mods in Claude Desktop. Exact spacing and colors can vary by platform and Claude version.
+
 ## What is a mod?
 
 A mod is a Claude Code plugin with JavaScript or TypeScript event handlers. Claude Code calls those handlers when something happens, such as:
@@ -101,19 +114,6 @@ For the desktop app:
 4. Enter `/plugin` and confirm the mod is listed as active.
 
 You can also use the desktop plugin manager. Click the plus button beside the prompt, choose Plugins, and use Manage plugins to enable or disable an installed mod.
-
-## Included mods
-
-| Mod | What it does | How to open or test it |
-| --- | --- | --- |
-| [Session HUD](./session-hud/README.md) | Shows the current Git branch, context, and weekly usage with detailed session information | Switch branches or click `Details` beside the context meter |
-| [Impact Map](./impact-map/README.md) | Tracks touched files and opens current Git diffs | Select an edited or created file in the Impact Map |
-| [Tool Cards](./tool-cards/README.md) | Replaces normal tool-use rows with compact status cards | Ask Claude to read a file or run a command |
-| [Verification Ledger](./verification-ledger/README.md) | Tracks local checks, Git state, and GitHub Actions | Enter `/checks` |
-| [Agent Pulse](./agent-pulse/README.md) | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agent-pulse` |
-| [Work Queue](./work-queue/README.md) | Groups session tasks by working, blocked, ready, and done | Ask Claude to create tasks or enter `/work-queue` |
-
-Each mod README contains its installation command, usage guide, test steps, source link, and interface image when the mod has a visual surface. The images are source-accurate mockups of the current mods in Claude Desktop. Exact spacing and colors can vary by platform and Claude version.
 
 ## How the mods work together
 

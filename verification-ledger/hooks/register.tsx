@@ -49,6 +49,7 @@ let ciRefreshedAt: number | null = null
 let revision = 0
 let refreshTask: Promise<void> | null = null
 let pollStarted = false
+let didAutoOpen = false
 
 function emptyGitSnapshot(): GitSnapshot {
   return {
@@ -254,6 +255,19 @@ function refreshAll($: EngineInterface): Promise<void> {
   return refreshTask
 }
 
+async function maybeAutoOpen($: EngineInterface): Promise<void> {
+  if (didAutoOpen) return
+
+  await $.ui.open({
+    id: PANE,
+    title: 'Checks',
+    closeOnEscape: true,
+    columns: 56,
+  })
+  didAutoOpen = true
+  void refreshAll($)
+}
+
 async function pollIfOpen($: EngineInterface): Promise<void> {
   const panes = await $.ui.panes()
   if (panes.some(pane => pane.id === PANE)) await refreshAll($)
@@ -291,6 +305,7 @@ function branchState(): string {
 
 export const register: Register = on => {
   on('session.start', async ($, event, next) => {
+    didAutoOpen = false
     await $.command.register({
       name: 'checks',
       description: 'Open and refresh the Verification Ledger',
@@ -316,6 +331,7 @@ export const register: Register = on => {
       closeOnEscape: true,
       columns: 56,
     })
+    didAutoOpen = true
     await refreshAll($)
     return {}
   })
@@ -343,6 +359,7 @@ export const register: Register = on => {
           revision,
         })
 
+        await maybeAutoOpen($)
         if (result.isError) $.ui.toast(`${recognized.label} failed.`)
         $.ui.invalidate('ui.render')
       }
