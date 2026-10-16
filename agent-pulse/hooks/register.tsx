@@ -208,7 +208,7 @@ export const register: Register = on => {
   on('session.start', async ($, event, next) => {
     resetState()
     await $.command.register({
-      name: 'agents',
+      name: 'agent-pulse',
       description: 'Open the live subagent activity pane',
     })
     pollTimer = $.clock.every(POLL_INTERVAL_MS, () => {
@@ -223,7 +223,7 @@ export const register: Register = on => {
     return next(event)
   })
 
-  on('command.run', { command: 'agents' }, async $ => {
+  on('command.run', { command: 'agent-pulse' }, async $ => {
     await $.ui.open({
       id: PANE,
       title: 'Agents',

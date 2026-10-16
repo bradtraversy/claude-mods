@@ -114,7 +114,7 @@ You can also use the desktop plugin manager. Click the plus button beside the pr
 | Safe Shell | Demonstrates a confirmation gate for a marked Bash command | Ask Claude to run `echo __SAFE_SHELL_DEMO__` |
 | Quality Console | Validates a local mod from inside Claude Code | Enter `/mod-check <path>` |
 | Verification Ledger | Tracks local checks, Git state, and GitHub Actions | Enter `/checks` |
-| Agent Pulse | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agents` |
+| Agent Pulse | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agent-pulse` |
 | Work Queue | Groups session tasks by working, blocked, ready, and done | Ask Claude to create tasks or enter `/work-queue` |
 
 ## Session HUD
@@ -377,7 +377,7 @@ Agent Pulse opens an `Agents` pane when the first subagent starts in the current
 - Current tool while one is running
 - Most recent tool after it finishes
 
-The pane does not open when a session has no subagents. It also does not take keyboard focus when it opens automatically. Enter `/agents` whenever you want to open it manually or bring it back after closing it.
+The pane does not open when a session has no subagents. It also does not take keyboard focus when it opens automatically. Enter `/agent-pulse` whenever you want to open it manually or bring it back after closing it. Claude's built-in `/agents` command remains unchanged.
 
 Select `View` on an agent card to replace the list with a compact detail view. The detail view shows the agent type, status, elapsed time, parent agent when present, and up to eight recent transcript messages. Select `Back` to return to the full list.
 
@@ -400,7 +400,7 @@ Claude Code may deny transcript access for an agent running in another process, 
 ### Test Agent Pulse
 
 1. Install and load `agent-pulse`.
-2. Enter `/agents` and confirm that the empty state says there are no subagents in the session.
+2. Enter `/agent-pulse` and confirm that the empty state says there are no subagents in the session.
 3. Ask Claude to use an Explore subagent to inspect a small part of the current project.
 4. Confirm that the `Agents` pane opens without taking focus.
 5. Watch the card update with the agent status, elapsed time, and current or last tool.
@@ -412,33 +412,44 @@ Source: [`agent-pulse/hooks/register.tsx`](./agent-pulse/hooks/register.tsx)
 
 ## Work Queue
 
-Work Queue opens a `Tasks` pane when Claude creates the first task in the current session. It turns Claude's task state into four focused groups:
+Work Queue gives Claude its own portable task tools and opens a `Tasks` pane when Claude creates the first task in the current session. It works in both local Desktop sessions and the terminal without depending on Claude's built-in task-list tools.
+
+The queue turns task state into four focused groups:
 
 - `Working` for tasks in progress
 - `Blocked` for pending tasks with unfinished dependencies
 - `Ready` for pending tasks that can start
 - `Done` for completed tasks
 
-Each row shows the task subject, owner when one is assigned, and how long it has been in its current state. Select `View` to see the full description, owner, creation and update times, tasks that block it, and tasks that depend on it. Dependencies are clickable, so you can move through the work graph without leaving the pane.
+Each row shows the task subject, owner when one is assigned, and how long it has been in its current state. Select `View` to see the full description, owner, creation and update times, tasks that block it, and tasks that depend on it. Dependencies are clickable, so you can move through the work graph without leaving the pane. Completed tasks leave the active list automatically. Select `Show N done` to review them and `Hide N done` to collapse them again.
 
 The pane does not open in an empty session and does not take keyboard focus when it opens automatically. Enter `/work-queue` to open it manually or bring it back after closing it.
 
-Work Queue observes `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet` tool calls. It also observes Claude Code's task-created and task-completed lifecycle events, which catches task activity that did not pass through those tools. It never creates, updates, completes, or deletes a task itself.
+The mod registers three model-callable tools:
+
+- `task_create` adds a task and returns its queue id
+- `task_update` changes its status, owner, description, or blockers
+- `task_list` reads the current queue before Claude plans or updates work
+
+A short session instruction tells Claude to use these tools for substantive work with several concrete steps, or whenever you explicitly ask for a task list. It also tells Claude not to create tasks for simple questions or one-step actions. The queue reflects real tool calls. It does not guess tasks from ordinary chat text.
+
+For compatibility, Work Queue still observes Claude's built-in `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet` tools when a runtime provides them. It also observes task-created and task-completed lifecycle events. These native Claude tasks are labeled as read-only in `task_list`; update them with Claude's native `TaskUpdate` tool. Work Queue never reports a local update as successful when the native task was not changed.
 
 Task history lives only in memory for the current session. Reloading the mod or starting a new session clears the pane. The mod does not call a model, start a process, read project files, make a network request, or persist task data.
 
-Claude Code does not deliver classic task lifecycle events to user-installed plugins when an organization manages the installation. Normal task tool calls still appear, but a task created in another process may be missing if it produces only a lifecycle event.
+Claude Code does not deliver the session instruction or classic task lifecycle events to user-installed plugins when an organization manages the installation. The Work Queue tools remain available, but you may need to ask Claude explicitly to use them.
 
 ### Test Work Queue
 
 1. Install and load `work-queue`.
 2. Enter `/work-queue` and confirm that the empty state says there are no tasks in the session.
-3. Ask Claude to create a three-step task plan where the interface task depends on the API task.
+3. Ask Claude: `Create a three-step task plan in Work Queue where the interface task depends on the API task.`
 4. Ask Claude to start the API task.
 5. Confirm that the pane shows one task under `Working`, the dependent task under `Blocked`, and the remaining task under `Ready`.
 6. Select `View` on the blocked task and confirm that the API task appears under `Blocked by`.
-7. Complete the API task and confirm that it moves to `Done` while the dependent task moves to `Ready`.
-8. Repeat the check in a terminal session and a local session in the desktop Code tab.
+7. Complete the API task and confirm that it leaves the active list while the dependent task moves to `Ready`.
+8. Select `Show 1 done` and confirm that the completed API task appears under `Done`.
+9. Repeat the check in a terminal session and a local session in the Desktop Code tab.
 
 Source: [`work-queue/hooks/register.tsx`](./work-queue/hooks/register.tsx)
 

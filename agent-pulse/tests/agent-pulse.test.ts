@@ -36,7 +36,7 @@ const TRANSCRIPT: SessionMessage[] = [
   },
 ]
 
-test('stays closed while empty and opens from the agents command', async ($, on) => {
+test('stays closed while empty and opens from the agent-pulse command', async ($, on) => {
   const opened: PaneOpenArgs[] = []
 
   mock.clock(on)
@@ -51,7 +51,7 @@ test('stays closed while empty and opens from the agents command', async ($, on)
   expect(opened).toHaveLength(0)
 
   const result = await $.command.run({
-    command: 'agents',
+    command: 'agent-pulse',
     args: '',
     origin: { kind: 'composer' },
     presentation: { isFullscreen: true, columns: 120 },
