@@ -1,6 +1,6 @@
 {
   "name": "work-queue",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Gives Claude a portable session task queue grouped by working, blocked, ready, and done",
   "author": { "name": "Brad Traversy" }
 }

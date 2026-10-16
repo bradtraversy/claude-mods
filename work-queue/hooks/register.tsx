@@ -5,6 +5,7 @@ const CLOCK_INTERVAL_MS = 5_000
 const CREATE_TOOL = 'mcp__work-queue__task_create'
 const UPDATE_TOOL = 'mcp__work-queue__task_update'
 const LIST_TOOL = 'mcp__work-queue__task_list'
+const CLEAR_TOOL = 'mcp__work-queue__task_clear'
 
 type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted'
 type TaskGroup = 'Working' | 'Blocked' | 'Ready' | 'Done'
@@ -65,6 +66,7 @@ declare module 'claude-code' {
     'mcp__work-queue__task_create': OwnedTaskCreateInput
     'mcp__work-queue__task_update': OwnedTaskUpdateInput
     'mcp__work-queue__task_list': Record<string, unknown>
+    'mcp__work-queue__task_clear': Record<string, unknown>
   }
 }
 
@@ -404,6 +406,16 @@ function listOwnedTasks(): { result: string } {
   })
 }
 
+function clearTasks($: EngineInterface): { result: string } {
+  const cleared = [...tasks.values()].filter(task => task.status !== 'deleted').length
+  tasks.clear()
+  selectedTaskId = ''
+  showCompleted = false
+  nextTaskNumber = 1
+  $.ui.invalidate('ui.render')
+  return toolResult({ cleared })
+}
+
 function maybeOpen($: EngineInterface): void {
   if (didAutoOpen || tasks.size === 0) return
   didAutoOpen = true
@@ -491,6 +503,16 @@ export const register: Register = on => {
         properties: {},
       },
     })
+    await $.tool.register({
+      name: 'task_clear',
+      description: 'Clear every task from the current Work Queue when the user asks to clear, empty, or reset it. Returns the number of tasks removed.',
+      isDeferred: false,
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    })
     clockTimer = $.clock.every(CLOCK_INTERVAL_MS, () => {
       void tickOpenPane($)
     })
@@ -507,7 +529,7 @@ export const register: Register = on => {
         {
           id: 'work-queue:workflow',
           scope: 'session',
-          text: 'Use the Work Queue tools for substantive work with several concrete steps or whenever the user asks for a task list. Create the tasks before implementation, mark the current task in progress, keep blockers accurate, and complete each task when it is actually done. Do not create queue tasks for simple questions or one-step actions.',
+          text: 'Use the Work Queue tools for substantive work with several concrete steps or whenever the user asks for a task list. Create the tasks before implementation, mark the current task in progress, keep blockers accurate, and complete each task when it is actually done. Use task_clear whenever the user asks to clear, empty, or reset the Work Queue. Do not create queue tasks for simple questions or one-step actions.',
         },
       ],
     }
@@ -562,6 +584,7 @@ export const register: Register = on => {
     if (event.tool === CREATE_TOOL) return createOwnedTask($, event)
     if (event.tool === UPDATE_TOOL) return updateOwnedTask($, event)
     if (event.tool === LIST_TOOL) return listOwnedTasks()
+    if (event.tool === CLEAR_TOOL) return clearTasks($)
 
     const result = await next(event)
     if (result.isError || result.deny) return result
@@ -655,7 +678,12 @@ export const register: Register = on => {
 
     return result
   }).catch(($, event, next) => {
-    if (event.tool === CREATE_TOOL || event.tool === UPDATE_TOOL || event.tool === LIST_TOOL) {
+    if (
+      event.tool === CREATE_TOOL
+      || event.tool === UPDATE_TOOL
+      || event.tool === LIST_TOOL
+      || event.tool === CLEAR_TOOL
+    ) {
       return toolError('Work Queue could not update the task list.')
     }
     return next(event)
