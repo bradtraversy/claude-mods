@@ -21,16 +21,6 @@
       "description": "Replaces tool-use rows with compact status cards"
     },
     {
-      "name": "safe-shell",
-      "source": "./safe-shell",
-      "description": "Demonstrates a shell-command confirmation gate with a harmless marker"
-    },
-    {
-      "name": "quality-console",
-      "source": "./quality-console",
-      "description": "Adds a command that validates any local Claude Code mod"
-    },
-    {
       "name": "verification-ledger",
       "source": "./verification-ledger",
       "description": "Tracks local verification commands and GitHub Actions for the current commit"
