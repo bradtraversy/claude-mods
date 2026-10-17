@@ -1,8 +1,8 @@
 # Session HUD
 
-Session HUD draws a compact band above the prompt with the current Git branch, context usage, a visual progress bar, and overall weekly account usage.
+Session HUD draws a compact telemetry strip above the prompt with the current Git branch, context usage, a visual progress bar, and overall weekly account usage.
 
-![Session HUD showing branch, context, account usage, and session details](../docs/images/session-hud.png)
+![Session HUD telemetry strip showing branch and context usage](../docs/images/session-hud.png)
 
 ## Install
 
@@ -14,9 +14,11 @@ Restart the session or enter `/reload-plugins` after installation.
 
 ## How it works
 
-Working branches appear in green. `main` and `master` appear in yellow as a reminder that you are on the default branch. Detached HEAD states are also yellow, and folders outside a Git repository say so directly. Session HUD checks every five seconds, so it also catches branch changes made in the built-in terminal or another terminal. Branches changed by a Claude Bash tool refresh immediately.
+The branch signal and name appear first. Working branches use green. `main` and `master` use yellow as a reminder that you are on the default branch. Detached HEAD states are also yellow, and folders outside a Git repository say so directly. Session HUD checks every five seconds, so it also catches branch changes made in the built-in terminal or another terminal. Branches changed by a Claude Bash tool refresh immediately.
 
-The compact `Week` label shows overall seven-day account usage. Click `Details` beside it to open Session Details. The pane shows:
+The context meter carries the strongest visual weight, followed by the compact `Week` label for overall seven-day account usage. Select `Details` to open Session Details. Its context-budget summary shows how much context is used, the percentage of the personal target, and how much headroom remains. The pane also shows:
+
+![Session Details showing context headroom, cost, and context makeup](../docs/images/session-hud-details.png)
 
 - Five-hour account usage with its reset time
 - Weekly account usage with its reset time
@@ -47,11 +49,11 @@ The meter is green below 70 percent, yellow from 70 through 89 percent, and red 
 1. Install and load `session-hud`.
 2. Send a prompt so Claude Code records session usage.
 3. Look directly above the prompt box.
-4. Confirm that the current branch, context, and weekly usage appear.
+4. Confirm that the branch signal, context meter, percentage, weekly usage, and `Details` control appear.
 5. Switch branches in the built-in terminal and confirm that the label updates within five seconds.
 6. Confirm that the `Week` label shows your weekly percentage.
-7. Click `Details` beside the progress bar.
-8. Confirm that Session Details shows five-hour usage, weekly usage, session cost, context categories, and any connected MCP tool schemas.
+7. Select `Details` beside the progress bar.
+8. Confirm that Session Details shows context headroom, five-hour usage, weekly usage, session cost, context categories, and any connected MCP tool schemas.
 9. Select `Change`, enter another context target, and confirm that the percentage updates after the mod reloads.
 
 ## Source

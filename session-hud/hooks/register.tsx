@@ -116,6 +116,13 @@ function detailTokenLabel(tokens: number): string {
   return tokens.toLocaleString()
 }
 
+function targetHeadroomLabel(tokens: number, target: number): string {
+  const remaining = target - tokens
+  if (remaining === 0) return 'At target'
+  if (remaining > 0) return `${detailTokenLabel(remaining)} until target`
+  return `${detailTokenLabel(Math.abs(remaining))} over target`
+}
+
 function contextMaxTokens(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_CONTEXT_MAX_TOKENS
@@ -374,34 +381,37 @@ export const register: Register = (on, options) => {
     const usage = await $.session.usage()
     const tokens = usage.context.tokens ?? 0
     const percent = Math.max(0, Math.round((tokens / contextTarget) * 100))
-    const width = Math.max(8, Math.min(20, event.props.bodyColumns - 50))
+    const width = Math.max(8, Math.min(18, event.props.bodyColumns - 50))
     const weeklyLimit = usage.rateLimits.find(limit => limit.kind === 'seven_day')
     const meterColor = usageColor(percent)
     const contextMeter = meter(percent, width)
 
     return (
       <Box flexDirection="column">
-        <Box gap={2} alignItems="center" flexWrap="wrap">
-          <Box gap={1} alignItems="center">
-            <Text dimColor>Branch</Text>
-            <Text bold color={branchColor(branchState.kind)}>{branchState.label}</Text>
+        <Box gap={2} alignItems="center" flexWrap="wrap" overflow="hidden">
+          <Box gap={1} alignItems="center" flexShrink={1} minWidth={0} overflow="hidden">
+            <Text color={branchColor(branchState.kind)} bold>●</Text>
+            <Text bold color={branchColor(branchState.kind)} wrap="truncate-middle">
+              {branchState.label}
+            </Text>
           </Box>
-          <Box gap={1} alignItems="center" flexWrap="wrap">
-            <Text bold>Context {percent}% of {tokenLabel(contextTarget)}</Text>
-            <Box>
+          <Box gap={1} alignItems="center" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            <Text bold>Context</Text>
+            <Box flexShrink={1} overflow="hidden">
               <Text color={meterColor}>{contextMeter.filled}</Text>
               <Text color="inactive">{contextMeter.remaining}</Text>
             </Box>
-            {weeklyLimit && <Text dimColor>Week {weeklyLimit.percentUsed}%</Text>}
-            <Button
-              key="context-details"
-              label="Details"
-              plain
-              onPress={() => {
-                void openBreakdown($)
-              }}
-            />
+            <Text color={meterColor} bold>{percent}% of {tokenLabel(contextTarget)}</Text>
           </Box>
+          {weeklyLimit && <Text dimColor>Week {weeklyLimit.percentUsed}%</Text>}
+          <Button
+            key="context-details"
+            label="Details"
+            variant="secondary"
+            onPress={() => {
+              void openBreakdown($)
+            }}
+          />
         </Box>
       </Box>
     )
@@ -414,14 +424,13 @@ export const register: Register = (on, options) => {
     if (!current) {
       return (
         <Box flexDirection="column" gap={1}>
-          <Box justifyContent="space-between" alignItems="center" width="100%">
-            <Text bold>Session Details</Text>
+          <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+            <Text bold wrap="truncate-end">Session Details</Text>
             <Button
               key="refresh-context"
               label={breakdownLoading ? 'Counting' : 'Refresh'}
               hotkey="r"
-              plain
-              dimColor
+              variant="secondary"
               onPress={() => {
                 void refreshBreakdown($, event.props.bodyColumns)
               }}
@@ -537,29 +546,53 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Box justifyContent="space-between" alignItems="center" width="100%">
-          <Text bold>Session Details</Text>
+        <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+          <Text bold wrap="truncate-end">Session Details</Text>
           <Button
             key="refresh-context"
             label={breakdownLoading ? 'Counting' : 'Refresh'}
             hotkey="r"
-            plain
-            dimColor
+            variant="secondary"
             onPress={() => {
               void refreshBreakdown($, event.props.bodyColumns)
             }}
           />
         </Box>
 
-        <Box flexDirection="column">
-          <Box justifyContent="space-between" width="100%">
-            <Box gap={1} alignItems="center">
-              <Text bold>{detailTokenLabel(current.totalTokens)} / {tokenLabel(contextTarget)} target</Text>
+        <Box
+          key="context-summary"
+          flexDirection="column"
+          gap={1}
+          borderStyle="round"
+          borderColor={usageColor(personalPercent)}
+          paddingX={1}
+          overflow="hidden"
+        >
+          <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+            <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Text color={usageColor(personalPercent)} bold>●</Text>
+              <Text bold wrap="truncate-end">
+                {detailTokenLabel(current.totalTokens)} used
+              </Text>
+            </Box>
+            <Text color={usageColor(personalPercent)} bold>{personalPercent}%</Text>
+          </Box>
+          {progressBar(personalPercent, barWidth, usageColor(personalPercent))}
+          <Box
+            key="context-target-row"
+            justifyContent="space-between"
+            alignItems="center"
+            gap={1}
+            overflow="hidden"
+          >
+            <Text dimColor wrap="truncate-end">
+              {targetHeadroomLabel(current.totalTokens, contextTarget)}
+            </Text>
+            <Box flexShrink={0}>
               <Button
                 key="change-context-target"
                 label={editingContextTarget ? 'Cancel' : 'Change'}
-                plain
-                dimColor
+                variant="secondary"
                 onPress={() => {
                   editingContextTarget = !editingContextTarget
                   contextTargetDraft = editingContextTarget ? tokenLabel(contextTarget) : ''
@@ -568,11 +601,11 @@ export const register: Register = (on, options) => {
                 }}
               />
             </Box>
-            <Text color={usageColor(personalPercent)} bold>{personalPercent}%</Text>
           </Box>
           {contextTargetEditor}
-          {progressBar(personalPercent, barWidth, usageColor(personalPercent))}
-          <Text dimColor>{current.model} · {tokenLabel(current.rawMaxTokens)} model window</Text>
+          <Text dimColor wrap="truncate-end">
+            {current.model} · {tokenLabel(current.rawMaxTokens)} model window
+          </Text>
         </Box>
 
         <Box flexDirection="column" gap={1} marginTop={1}>
@@ -598,7 +631,7 @@ export const register: Register = (on, options) => {
         </Box>
 
         <Box flexDirection="column" gap={1}>
-          <Text bold>What is using context</Text>
+          <Text bold>Context makeup</Text>
           {usedCategories.map(category => {
             const share = current.totalTokens > 0
               ? (category.tokens / current.totalTokens) * 100
