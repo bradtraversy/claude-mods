@@ -152,3 +152,43 @@ test('clears file activity when clear starts a new session', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'old-session.ts' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('records only successful file tools', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.cwd', () => ({ value: '/project' }))
+  on('tool.call', ($, event) => {
+    if (event.tool === 'Read') return { deny: 'Read was denied.' }
+    if (event.tool === 'Edit') {
+      return { isError: true, result: 'The requested text was not found.' }
+    }
+    if (event.tool === 'Write') return { deny: 'Write was denied.' }
+    return { result: 'ok' }
+  })
+
+  await $.tool.call({ tool: 'Read', file_path: '/project/src/denied-read.ts' })
+  await $.tool.call({
+    tool: 'Edit',
+    file_path: '/project/src/failed-edit.ts',
+    old_string: 'missing',
+    new_string: 'replacement',
+  })
+  await $.tool.call({
+    tool: 'Write',
+    file_path: '/project/src/denied-write.ts',
+    content: 'export const value = true\n',
+  })
+
+  const ui = await $.ui.mount({
+    plugin: 'impact-map',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'impact-map',
+    props: PROPS,
+  })
+
+  expect(await ui.find({ type: 'Text', text: 'No files touched yet.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'denied-read.ts' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'failed-edit.ts' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'denied-write.ts' })).toBeUndefined()
+  await ui.unmount()
+})
