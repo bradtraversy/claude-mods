@@ -27,6 +27,7 @@ let transcriptLoading = false
 let transcriptError = ''
 let currentTime = 0
 let didAutoOpen = false
+let showFinished = false
 let pollTimer: Timer | null = null
 let sessionGeneration = 0
 
@@ -43,7 +44,13 @@ function statusColor(status: AgentStatus): 'success' | 'error' | 'warning' | 'ac
 }
 
 function statusLabel(status: AgentStatus): string {
-  return status.toUpperCase()
+  if (status === 'running') return 'Running'
+  if (status === 'waiting') return 'Waiting'
+  if (status === 'idle') return 'Idle'
+  if (status === 'completed') return 'Completed'
+  if (status === 'failed') return 'Failed'
+  if (status === 'killed') return 'Killed'
+  return 'Pending'
 }
 
 function displayName(info: AgentInfo): string {
@@ -72,22 +79,6 @@ function normalizeText(text: string): string {
   return `${normalized.slice(0, TRANSCRIPT_TEXT_LIMIT - 3)}...`
 }
 
-function countBadgeSvg(activeCount: number, finishedCount: number): string {
-  return [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="190" height="24" viewBox="0 0 190 24">',
-    '<rect width="82" height="24" rx="7" fill="#2b2b2b"/>',
-    '<circle cx="12" cy="12" r="4" fill="#22c55e"/>',
-    '<text x="48" y="16" text-anchor="middle" fill="#f5f5f5" ',
-    'font-family="system-ui, sans-serif" font-size="13" font-weight="600">',
-    `${activeCount} active</text>`,
-    '<rect x="90" width="100" height="24" rx="7" fill="#d4d4d4"/>',
-    '<text x="140" y="16" text-anchor="middle" fill="#171717" ',
-    'font-family="system-ui, sans-serif" font-size="13" font-weight="600">',
-    `${finishedCount} finished</text>`,
-    '</svg>',
-  ].join('')
-}
-
 function sameAgent(left: AgentInfo, right: AgentInfo): boolean {
   return left.description === right.description
     && left.type === right.type
@@ -105,6 +96,7 @@ function clearSessionState(): void {
   transcriptError = ''
   currentTime = 0
   didAutoOpen = false
+  showFinished = false
 }
 
 function stopPolling(): void {
@@ -337,14 +329,17 @@ export const register: Register = on => {
 
     if (selected) {
       const messages = transcript
+      const description = selected.info.description !== displayName(selected.info)
+        ? selected.info.description
+        : ''
 
       return (
         <Box flexDirection="column" gap={1}>
-          <Box justifyContent="space-between" alignItems="center" width="100%">
+          <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
             <Button
               key="agent-back"
               label="Back"
-              plain
+              variant="secondary"
               onPress={() => {
                 selectedAgentId = ''
                 transcript = []
@@ -355,30 +350,36 @@ export const register: Register = on => {
             <Button
               key="agent-transcript-refresh"
               label={transcriptLoading ? 'Loading' : 'Refresh'}
-              plain
-              dimColor
+              variant="secondary"
               onPress={() => {
                 void loadTranscript($, selected.info.id)
               }}
             />
           </Box>
 
-          <Box flexDirection="column">
-            <Box justifyContent="space-between" width="100%">
-              <Text bold wrap="truncate">{displayName(selected.info)}</Text>
-              <Text color={statusColor(selected.info.status)} bold>
-                {statusLabel(selected.info.status)}
-              </Text>
+          <Box
+            flexDirection="column"
+            borderStyle="round"
+            borderColor={statusColor(selected.info.status)}
+            paddingX={1}
+            overflow="hidden"
+          >
+            <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+              <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                <Text color={statusColor(selected.info.status)} bold>●</Text>
+                <Text bold wrap="truncate-end">{displayName(selected.info)}</Text>
+              </Box>
+              <Text dimColor>{durationLabel(elapsedTime(selected))}</Text>
             </Box>
-            <Text dimColor>
-              {selected.info.type}  {durationLabel(elapsedTime(selected))}
-            </Text>
+            {description && <Text wrap="wrap">{description}</Text>}
+            <Text color={statusColor(selected.info.status)}>{statusLabel(selected.info.status)}</Text>
+            <Text dimColor>{selected.info.type} agent</Text>
             {selected.info.parentId && (
-              <Text dimColor wrap="truncate">Parent: {selected.info.parentId}</Text>
+              <Text dimColor wrap="truncate-end">Parent: {selected.info.parentId}</Text>
             )}
             {(selected.currentTool || selected.lastTool) && (
               <Text dimColor>
-                {selected.currentTool ? 'Using' : 'Last tool'}: {selected.currentTool || selected.lastTool}
+                {selected.currentTool ? 'Using' : 'Last used'} {selected.currentTool || selected.lastTool}
               </Text>
             )}
           </Box>
@@ -411,48 +412,22 @@ export const register: Register = on => {
       const finishOrder = Number(isFinished(left.info.status)) - Number(isFinished(right.info.status))
       return finishOrder || right.lastChangedAt - left.lastChangedAt
     })
-    const activeCount = agents.filter(agent => !isFinished(agent.info.status)).length
-    const finishedCount = agents.length - activeCount
-    const countBadges = event.surface === 'desktop'
-      ? (() => {
-          const { Svg } = $.ui.resolve(event)
-          return (
-            <Svg
-              source={countBadgeSvg(activeCount, finishedCount)}
-              alt={`${activeCount} active, ${finishedCount} finished`}
-              width={190}
-              height={24}
-            />
-          )
-        })()
-      : (
-          <Box gap={1}>
-            <Box
-              key="active-count"
-              backgroundColor="subtle"
-              paddingX={1}
-            >
-              <Text><Text color="success" bold>● {activeCount}</Text> active</Text>
-            </Box>
-            <Box
-              key="finished-count"
-              backgroundColor="inactive"
-              paddingX={1}
-            >
-              <Text color="inverseText"><Text bold>{finishedCount}</Text> finished</Text>
-            </Box>
-          </Box>
-        )
+    const activeAgents = agents.filter(agent => !isFinished(agent.info.status))
+    const finishedAgents = agents.filter(agent => isFinished(agent.info.status))
+    const activeCount = activeAgents.length
+    const finishedCount = finishedAgents.length
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Box justifyContent="space-between" alignItems="center" width="100%">
-          <Text bold>Agent Pulse</Text>
+        <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+          <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            <Text bold>Agent Pulse</Text>
+            {agents.length > 0 && <Text dimColor>{agents.length} total</Text>}
+          </Box>
           <Button
             key="agent-list-refresh"
             label="Refresh"
-            plain
-            dimColor
+            variant="secondary"
             onPress={() => {
               void refreshAgents($)
             }}
@@ -466,41 +441,140 @@ export const register: Register = on => {
           </Box>
         ) : (
           <>
-            {countBadges}
-            <Box flexDirection="column" gap={1} marginTop={1}>
-              {agents.map(agent => {
+            <Box
+              flexDirection="column"
+              borderStyle="round"
+              borderColor={activeCount > 0 ? 'success' : 'inactive'}
+              paddingX={1}
+              overflow="hidden"
+            >
+              <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+                <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                  <Text color={activeCount > 0 ? 'success' : 'inactive'} bold>●</Text>
+                  <Text bold wrap="truncate-end">
+                    {activeCount === 0
+                      ? 'No live agents'
+                      : `${activeCount} live agent${activeCount === 1 ? '' : 's'}`}
+                  </Text>
+                </Box>
+                <Text dimColor>{finishedCount} finished</Text>
+              </Box>
+              <Text dimColor wrap="truncate-end">
+                {activeCount > 0
+                  ? 'Live activity updates every 2 seconds.'
+                  : 'Waiting for the next subagent.'}
+              </Text>
+            </Box>
+
+            {activeAgents.length > 0 && (
+              <Box flexDirection="column" gap={1}>
+                <Box gap={1}>
+                  <Text bold>Live agents</Text>
+                  <Text dimColor>{activeCount}</Text>
+                </Box>
+                {activeAgents.map(agent => {
+                  const name = displayName(agent.info)
+                  const description = agent.info.description !== name ? agent.info.description : ''
+                  const activity = agent.currentTool
+                    ? `Using ${agent.currentTool}`
+                    : agent.lastTool
+                      ? `Last used ${agent.lastTool}`
+                      : `${agent.info.type} agent`
+
+                  return (
+                    <Box
+                      key={`agent-card:${agent.info.id}`}
+                      flexDirection="column"
+                      borderStyle="round"
+                      borderDimColor
+                      paddingX={1}
+                      overflow="hidden"
+                    >
+                      <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+                        <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                          <Text color={statusColor(agent.info.status)} bold>●</Text>
+                          <Text bold wrap="truncate-end">{name}</Text>
+                        </Box>
+                        <Text dimColor>{durationLabel(elapsedTime(agent))}</Text>
+                      </Box>
+                      {description && <Text wrap="truncate-end">{description}</Text>}
+                      <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+                        <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                          <Text color={statusColor(agent.info.status)}>{statusLabel(agent.info.status)}</Text>
+                          <Text dimColor wrap="truncate-end">{activity}</Text>
+                        </Box>
+                        <Button
+                          key={`agent-view:${agent.info.id}`}
+                          label="Details"
+                          variant="secondary"
+                          onPress={() => {
+                            void loadTranscript($, agent.info.id)
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                  )
+                })}
+              </Box>
+            )}
+
+            <Box key="finished-section" flexDirection="column" gap={1} marginTop={1}>
+              <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+                <Box gap={1}>
+                  <Text bold>Finished</Text>
+                  <Text dimColor>{finishedCount}</Text>
+                </Box>
+                {finishedCount > 0 && (
+                  <Button
+                    key="toggle-finished"
+                    label={`${showFinished ? 'Hide' : 'Show'} ${finishedCount}`}
+                    variant="secondary"
+                    onPress={() => {
+                      showFinished = !showFinished
+                      $.ui.invalidate('ui.render')
+                    }}
+                  />
+                )}
+              </Box>
+
+              {finishedCount === 0 && <Text dimColor>No finished agents yet.</Text>}
+              {showFinished && finishedAgents.map(agent => {
+                const name = displayName(agent.info)
+                const description = agent.info.description !== name ? agent.info.description : ''
                 const activity = agent.currentTool
                   ? `Using ${agent.currentTool}`
                   : agent.lastTool
-                    ? `Last tool: ${agent.lastTool}`
-                    : agent.info.type
+                    ? `Last used ${agent.lastTool}`
+                    : `${agent.info.type} agent`
 
                 return (
                   <Box
-                    key={`agent-card:${agent.info.id}`}
-                    flexDirection="column"
-                    borderStyle="round"
-                    borderColor={statusColor(agent.info.status)}
-                    paddingX={1}
+                    key={`finished-agent:${agent.info.id}`}
+                    justifyContent="space-between"
+                    alignItems="center"
+                    gap={1}
+                    overflow="hidden"
                   >
-                    <Box justifyContent="space-between" width="100%">
-                      <Text color={statusColor(agent.info.status)} bold>
-                        {statusLabel(agent.info.status)}
-                      </Text>
-                      <Text dimColor>{durationLabel(elapsedTime(agent))}</Text>
+                    <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                      <Box gap={1} overflow="hidden">
+                        <Text color={statusColor(agent.info.status)}>●</Text>
+                        <Text bold wrap="truncate-end">{name}</Text>
+                        <Text color={statusColor(agent.info.status)}>{statusLabel(agent.info.status)}</Text>
+                      </Box>
+                      {description && <Text wrap="truncate-end">{description}</Text>}
+                      <Box justifyContent="space-between" gap={1} overflow="hidden">
+                        <Text dimColor wrap="truncate-end">{activity}</Text>
+                        <Text dimColor>{durationLabel(elapsedTime(agent))}</Text>
+                      </Box>
                     </Box>
-                    <Text bold wrap="truncate">{displayName(agent.info)}</Text>
-                    <Box justifyContent="space-between" alignItems="center" width="100%">
-                      <Text dimColor wrap="truncate">{activity}</Text>
-                      <Button
-                        key={`agent-view:${agent.info.id}`}
-                        label="View"
-                        plain
-                        onPress={() => {
-                          void loadTranscript($, agent.info.id)
-                        }}
-                      />
-                    </Box>
+                    <Button
+                      key={`agent-view:${agent.info.id}`}
+                      label="Details"
+                      variant="secondary"
+                      onPress={() => {
+                        void loadTranscript($, agent.info.id)
+                      }}
+                    />
                   </Box>
                 )
               })}

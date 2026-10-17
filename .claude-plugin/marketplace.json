@@ -28,7 +28,7 @@
     {
       "name": "agent-pulse",
       "source": "./agent-pulse",
-      "description": "Shows live subagent activity and recent transcripts in a session pane"
+      "description": "Shows a live subagent roster with current activity and recent transcripts"
     },
     {
       "name": "work-queue",

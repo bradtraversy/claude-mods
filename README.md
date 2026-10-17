@@ -15,7 +15,7 @@ Every mod is a small, independent Claude Code plugin written in TypeScript. Inst
 | [Impact Map](./impact-map/README.md) | Groups session file activity by folder with change totals and current Git diffs | Filter changed files or select one in the Impact Map |
 | [Tool Cards](./tool-cards/README.md) | Replaces normal tool-use rows with diagnostic cards for status, timing, results, and details | Ask Claude to read a file, edit code, or run a command |
 | [Verification Ledger](./verification-ledger/README.md) | Shows release readiness across local checks, Git state, and GitHub Actions | Run a recognized check or enter `/checks` |
-| [Agent Pulse](./agent-pulse/README.md) | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agent-pulse` |
+| [Agent Pulse](./agent-pulse/README.md) | Shows a live subagent roster with current activity and recent transcripts | Ask Claude to use a subagent or enter `/agent-pulse` |
 | [Work Queue](./work-queue/README.md) | Shows live progress, focused work, named blockers, ready tasks, and completed work | Ask Claude to create tasks or enter `/work-queue` |
 
 Each mod README contains its installation command, usage guide, test steps, source link, and interface image when the mod has a visual surface. The images are source-accurate mockups of the current mods in Claude Desktop. Exact spacing and colors can vary by platform and Claude version.

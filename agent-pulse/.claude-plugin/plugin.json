@@ -1,6 +1,6 @@
 {
   "name": "agent-pulse",
-  "version": "0.1.1",
-  "description": "Shows live subagent activity and recent transcripts in a session pane",
+  "version": "0.2.0",
+  "description": "Shows a live subagent roster with current activity and recent transcripts",
   "author": { "name": "Brad Traversy" }
 }

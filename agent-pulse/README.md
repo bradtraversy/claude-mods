@@ -14,17 +14,20 @@ Restart the session or enter `/reload-plugins` after installation.
 
 ## What it shows
 
-Each agent has a compact card with:
+The pane leads with a summary of live and finished agents. Agents that are still part of the current session appear in the `Live agents` section with:
 
-- Current status
-- Agent name or task description
+- A status signal and current state
+- Agent name and task description
 - Elapsed time since the mod first observed it
 - Current tool while one is running
 - Most recent tool after it finishes
+- A `Details` action for the recent transcript
+
+Finished agents stay collapsed in a quieter section until you select `Show`. This keeps the current parallel work visible without letting completed history take over the pane.
 
 The pane does not open when a session has no subagents. It also does not take keyboard focus when it opens automatically. Enter `/agent-pulse` whenever you want to open it manually or bring it back after closing it. Claude's built-in `/agents` command remains unchanged.
 
-Select `View` on an agent card to replace the list with a compact detail view. The detail view shows the agent type, status, elapsed time, parent agent when present, and up to eight recent transcript messages. Select `Back` to return to the full list.
+Select `Details` on an agent to replace the roster with a focused detail view. The detail view shows the agent type, status, elapsed time, parent agent when present, and up to eight recent transcript messages. Select `Back` to return to the full roster.
 
 Agent Pulse keeps finished agents in the pane for the rest of the current session, even when Claude Code no longer includes them in its live agent list. The history resets when the mod reloads or a new session starts.
 
@@ -48,10 +51,11 @@ Claude Code may deny transcript access for an agent running in another process, 
 2. Enter `/agent-pulse` and confirm that the empty state says there are no subagents in the session.
 3. Ask Claude to use an Explore subagent to inspect a small part of the current project.
 4. Confirm that the `Agents` pane opens without taking focus.
-5. Watch the card update with the agent status, elapsed time, and current or last tool.
-6. Select `View` and confirm that the recent prompt, response, and tool names appear.
-7. Select `Back` to return to the agent list.
-8. Repeat the same check in a terminal session and a local session in the desktop Code tab.
+5. Confirm the summary and `Live agents` section update with the agent status, elapsed time, task description, and current or last tool.
+6. Let one agent finish, select `Show` in the finished section, and confirm its compact row appears.
+7. Select `Details` and confirm that the recent prompt, response, and tool names appear.
+8. Select `Back` to return to the roster.
+9. Repeat the same check in a terminal session and a local session in the desktop Code tab.
 
 ## Source
 

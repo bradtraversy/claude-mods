@@ -18,6 +18,14 @@ const RUNNING_AGENT: AgentInfo = {
   name: 'auth-scout',
 }
 
+const COMPLETED_AGENT: AgentInfo = {
+  id: 'agent-2',
+  description: 'Summarize the changed files',
+  type: 'Explore',
+  status: 'completed',
+  name: 'change-summary',
+}
+
 const TRANSCRIPT: SessionMessage[] = [
   {
     role: 'user',
@@ -128,18 +136,19 @@ test('shows live agent activity and a recent transcript on terminal and desktop'
     })
 
     expect(await ui.find({ type: 'Text', text: 'Agent Pulse' })).toBeDefined()
-    if (surface === 'desktop') {
-      const badges = await ui.find({ type: 'Svg' })
-      expect(badges?.props.alt).toBe('1 active, 0 finished')
-    } else {
-      expect(await ui.find({ type: 'Box', key: 'active-count' })).toBeDefined()
-      expect(await ui.find({ type: 'Box', key: 'finished-count' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: '1 active' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: '0 finished' })).toBeDefined()
-    }
-    expect(await ui.find({ type: 'Text', text: 'RUNNING' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '1 live agent' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '0 finished' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Live agents' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Running' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: RUNNING_AGENT.name })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Last tool: Read' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: RUNNING_AGENT.description })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Last used Read' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'No finished agents yet.' })).toBeDefined()
+    expect(await ui.find({
+      type: 'Button',
+      key: `agent-view:${RUNNING_AGENT.id}`,
+      props: { label: 'Details', variant: 'secondary' },
+    })).toBeDefined()
 
     await ui.press({ key: `agent-view:${RUNNING_AGENT.id}` })
     await Promise.resolve()
@@ -154,6 +163,64 @@ test('shows live agent activity and a recent transcript on terminal and desktop'
     expect(await ui.find({ type: 'Text', text: 'Agent Pulse' })).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('keeps finished agents quiet until the user expands them', async ($, on) => {
+  let agents: AgentInfo[] = []
+
+  mock.clock(on)
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('agent.list', () => ({ value: agents }))
+  on('agent.spawn', ($, event) => {
+    const agent = event.description === COMPLETED_AGENT.description
+      ? COMPLETED_AGENT
+      : RUNNING_AGENT
+    agents = [...agents, agent]
+    return { model: 'claude-opus-4-1', agentId: agent.id }
+  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+  for (const agent of [RUNNING_AGENT, COMPLETED_AGENT]) {
+    await $.agent.spawn({
+      tool_use_id: `tool-${agent.id}`,
+      prompt: agent.description,
+      description: agent.description,
+      subagentType: agent.type,
+      provider: { plugin: 'engine', tier: 'core' },
+      name: agent.name,
+      parentModel: 'claude-opus-4-1',
+      background: true,
+      fork: false,
+    })
+  }
+  await Promise.resolve()
+
+  const ui = await $.ui.mount({
+    plugin: 'agent-pulse',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'agent-pulse',
+    props: PANE_PROPS,
+  })
+
+  expect(await ui.find({ type: 'Text', text: '1 live agent' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '1 finished' })).toBeDefined()
+  expect(await ui.find({
+    type: 'Box',
+    key: 'finished-section',
+    props: { marginTop: 1 },
+  })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'toggle-finished' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: COMPLETED_AGENT.name })).toBeUndefined()
+
+  await ui.press({ key: 'toggle-finished' })
+  expect(await ui.find({ type: 'Text', text: COMPLETED_AGENT.name })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: COMPLETED_AGENT.description })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Completed' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Explore agent' })).toBeDefined()
+
+  await ui.unmount()
 })
 
 test('clears agents and keeps polling after clear starts a new session', async ($, on) => {
