@@ -4,6 +4,8 @@ Tool Cards replaces Claude Code's standard tool-use row with a compact diagnosti
 
 ![Tool Cards showing a completed Bash command](../docs/images/tool-cards.png)
 
+![Tool Cards showing expanded Bash output](../docs/images/tool-cards-details.png)
+
 ## Install
 
 ```bash
