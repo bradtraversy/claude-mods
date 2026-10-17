@@ -109,15 +109,17 @@ test('shows usage against the configured context maximum on terminal and desktop
       props: PROPS,
     })
 
-    expect(await ui.find({ type: 'Text', text: 'Branch' })).toBeDefined()
     const featureBranch = await ui.find({ type: 'Text', text: 'feature/session-branch-indicator' })
     if (!featureBranch) throw new Error('The working branch was not rendered')
     expect(featureBranch.props.color).toBe('success')
-    expect(await ui.find({ type: 'Text', text: 'Context 17% of 300k' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Context' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '17% of 300k' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Week 64%' })).toBeDefined()
-    expect(await ui.find({ type: 'Button', key: 'context-details' })).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'context-details' }))?.props.label)
-      .toBe('Details')
+    expect(await ui.find({
+      type: 'Button',
+      key: 'context-details',
+      props: { label: 'Details', variant: 'secondary' },
+    })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '$1.24' })).toBeUndefined()
     const meter = await ui.find({ type: 'Text', text: /^█/ })
     expect(meter?.props.color).toBe('success')
@@ -168,7 +170,19 @@ test('shows usage against the configured context maximum on terminal and desktop
     })
 
     expect(await pane.find({ type: 'Text', text: 'Session Details' })).toBeDefined()
-    expect(await pane.find({ type: 'Button', key: 'change-context-target' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '52k used' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '248k until target' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: 'Context makeup' })).toBeDefined()
+    expect(await pane.find({
+      type: 'Box',
+      key: 'context-summary',
+      props: { gap: 1 },
+    })).toBeDefined()
+    expect(await pane.find({
+      type: 'Button',
+      key: 'change-context-target',
+      props: { label: 'Change', variant: 'secondary' },
+    })).toBeDefined()
     configuredTarget = undefined
     await pane.press({ key: 'change-context-target' })
     expect(await pane.find({ type: 'Input', key: 'context-target-input' })).toBeDefined()
@@ -223,7 +237,8 @@ test('uses the saved context target', { options: { context_max_tokens: 200_000 }
     props: PROPS,
   })
 
-  expect(await ui.find({ type: 'Text', text: 'Context 26% of 200k' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Context' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '26% of 200k' })).toBeDefined()
   await ui.unmount()
 })
 

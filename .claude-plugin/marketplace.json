@@ -8,7 +8,7 @@
     {
       "name": "session-hud",
       "source": "./session-hud",
-      "description": "Shows the current Git branch, context, and account usage above the prompt with detailed session information"
+      "description": "Shows branch safety, context headroom, and account usage in a compact session telemetry strip"
     },
     {
       "name": "impact-map",
