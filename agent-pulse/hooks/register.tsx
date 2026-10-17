@@ -467,7 +467,7 @@ export const register: Register = on => {
             </Box>
 
             {activeAgents.length > 0 && (
-              <Box flexDirection="column" gap={1}>
+              <Box key="live-agents-section" flexDirection="column" gap={1} marginTop={1}>
                 <Box gap={1}>
                   <Text bold>Live agents</Text>
                   <Text dimColor>{activeCount}</Text>

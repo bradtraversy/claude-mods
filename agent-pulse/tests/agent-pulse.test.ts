@@ -139,6 +139,11 @@ test('shows live agent activity and a recent transcript on terminal and desktop'
     expect(await ui.find({ type: 'Text', text: '1 live agent' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '0 finished' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Live agents' })).toBeDefined()
+    expect(await ui.find({
+      type: 'Box',
+      key: 'live-agents-section',
+      props: { marginTop: 1 },
+    })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Running' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: RUNNING_AGENT.name })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: RUNNING_AGENT.description })).toBeDefined()
