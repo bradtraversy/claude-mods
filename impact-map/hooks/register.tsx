@@ -3,6 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 const PANE = 'impact-map'
 const DIFF_PANE = 'impact-map-diff'
 const MAX_DIFF_CHARS = 90_000
+const MAX_RECENT_FILES = 14
 
 type FileAction = 'read' | 'edited' | 'created'
 
@@ -46,6 +47,11 @@ function clearSessionState(): void {
 function remember(path: string, action: FileAction): void {
   files.delete(path)
   files.set(path, action)
+
+  if (files.size > MAX_RECENT_FILES) {
+    const oldestPath = files.keys().next().value
+    if (oldestPath !== undefined) files.delete(oldestPath)
+  }
 }
 
 function fileName(path: string): string {
@@ -243,7 +249,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, event) => {
     const { Box, Button, Text } = $.ui.resolve(event)
-    const entries = [...files.entries()].slice(-14)
+    const entries = [...files.entries()]
 
     if (entries.length === 0) return <Text dimColor>No files touched yet.</Text>
 

@@ -192,3 +192,28 @@ test('records only successful file tools', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: 'denied-write.ts' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('retains only the 14 most recently used file paths', async ($, on) => {
+  on('session.cwd', () => ({ value: '/project' }))
+  on('tool.call', () => ({ result: 'ok' }))
+
+  for (let index = 1; index <= 14; index += 1) {
+    await $.tool.call({ tool: 'Read', file_path: `/project/src/file-${index}.ts` })
+  }
+  await $.tool.call({ tool: 'Read', file_path: '/project/src/file-1.ts' })
+  await $.tool.call({ tool: 'Read', file_path: '/project/src/file-15.ts' })
+
+  const ui = await $.ui.mount({
+    plugin: 'impact-map',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'impact-map',
+    props: PROPS,
+  })
+
+  expect(await ui.find({ type: 'Text', text: '14 recent files' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'file-1.ts' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'file-2.ts' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'file-15.ts' })).toBeDefined()
+  await ui.unmount()
+})
