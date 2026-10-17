@@ -27,6 +27,7 @@ For file tools, the card displays the file path. For Bash, it displays the comma
 2. Ask Claude to read a file.
 3. Watch the card change from `RUNNING` to `DONE`.
 4. Ask Claude to run a command that fails if you want to see the `FAILED` state.
+5. Interrupt a running command and confirm that `STOPPED` uses the muted inactive color rather than the green success color.
 
 The green `DONE` label is part of this mod. Disable Tool Cards from `/plugin` to return to Claude Code's normal tool rows.
 

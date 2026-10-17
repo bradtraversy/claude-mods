@@ -1,5 +1,7 @@
 import type { Register } from 'claude-code'
 
+type ToolState = 'running' | 'done' | 'failed' | 'stopped'
+
 function inputTarget(input: unknown): string {
   if (!input || typeof input !== 'object') return 'No details'
 
@@ -9,18 +11,25 @@ function inputTarget(input: unknown): string {
   return candidate.length > 90 ? `${candidate.slice(0, 87)}...` : candidate
 }
 
-function status(isRunning: boolean, isErrored: boolean, isInterrupted: boolean): string {
+function status(isRunning: boolean, isErrored: boolean, isInterrupted: boolean): ToolState {
   if (isInterrupted) return 'stopped'
   if (isErrored) return 'failed'
   if (isRunning) return 'running'
   return 'done'
 }
 
+function statusColor(state: ToolState): 'success' | 'warning' | 'error' | 'inactive' {
+  if (state === 'failed') return 'error'
+  if (state === 'running') return 'warning'
+  if (state === 'stopped') return 'inactive'
+  return 'success'
+}
+
 export const register: Register = on => {
   on('ui.render', { component: 'ToolUse' }, ($, event) => {
     const { Box, Text } = $.ui.resolve(event)
     const state = status(event.props.isRunning, event.props.isErrored, event.props.isInterrupted)
-    const color = state === 'failed' ? 'error' : state === 'running' ? 'warning' : 'success'
+    const color = statusColor(state)
 
     return (
       <Box borderStyle="round" paddingX={1} gap={1}>
