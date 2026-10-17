@@ -77,18 +77,23 @@ let didAutoOpen = false
 let showCompleted = false
 let clockTimer: Timer | null = null
 let nextTaskNumber = 1
+let sessionGeneration = 0
 
 function unique(values: string[]): string[] {
   return [...new Set(values)]
 }
 
-function resetState(): void {
+function clearSessionState(): void {
+  sessionGeneration += 1
   tasks.clear()
   selectedTaskId = ''
   currentTime = 0
   didAutoOpen = false
   showCompleted = false
   nextTaskNumber = 1
+}
+
+function stopClock(): void {
   clockTimer?.cancel()
   clockTimer = null
 }
@@ -332,6 +337,7 @@ async function createOwnedTask(
   $: EngineInterface,
   event: unknown,
 ): Promise<{ result: string } | { deny: string }> {
+  const generation = sessionGeneration
   const input = inputRecord(event)
   const subject = stringInput(input, 'subject')?.trim()
   if (!subject) {
@@ -343,6 +349,7 @@ async function createOwnedTask(
   if (invalidBlocker) return toolError(invalidBlocker)
 
   const now = await $.clock.now()
+  if (generation !== sessionGeneration) return toolError('The session changed before the task was created.')
   currentTime = now
   let id = `queue-${nextTaskNumber++}`
   while (tasks.has(id)) id = `queue-${nextTaskNumber++}`
@@ -362,6 +369,7 @@ async function updateOwnedTask(
   $: EngineInterface,
   event: unknown,
 ): Promise<{ result: string } | { deny: string }> {
+  const generation = sessionGeneration
   const input = inputRecord(event)
   const id = stringInput(input, 'taskId')?.trim()
   const task = id ? tasks.get(id) : undefined
@@ -377,6 +385,7 @@ async function updateOwnedTask(
   if (invalidBlocker) return toolError(invalidBlocker)
 
   const now = await $.clock.now()
+  if (generation !== sessionGeneration) return toolError('The session changed before the task was updated.')
   currentTime = now
   const subject = stringInput(input, 'subject')?.trim()
   const description = stringInput(input, 'description')
@@ -428,10 +437,14 @@ function changed($: EngineInterface): void {
 }
 
 async function tickOpenPane($: EngineInterface): Promise<void> {
+  const generation = sessionGeneration
+
   try {
     const pane = (await $.ui.panes()).find(item => item.id === PANE)
     if (!pane?.isPlaced || !pane.isShown) return
-    currentTime = await $.clock.now()
+    const now = await $.clock.now()
+    if (generation !== sessionGeneration) return
+    currentTime = now
     $.ui.invalidate('ui.render')
   } catch {
     // A display refresh should never affect Claude's work.
@@ -440,7 +453,8 @@ async function tickOpenPane($: EngineInterface): Promise<void> {
 
 export const register: Register = on => {
   on('session.start', async ($, event, next) => {
-    resetState()
+    stopClock()
+    clearSessionState()
     await $.command.register({
       name: 'work-queue',
       description: 'Open the current Claude task queue',
@@ -536,12 +550,17 @@ export const register: Register = on => {
   }).catch(($, event, next) => next(event))
 
   on('session.end', ($, event, next) => {
-    clockTimer?.cancel()
-    clockTimer = null
+    if (event.reason === 'clear' || event.reason === 'resume') {
+      clearSessionState()
+      $.ui.invalidate('ui.render')
+    } else {
+      stopClock()
+    }
     return next(event)
   })
 
   on('command.run', { command: 'work-queue' }, async $ => {
+    const generation = sessionGeneration
     await $.ui.open({
       id: PANE,
       title: 'Tasks',
@@ -549,14 +568,19 @@ export const register: Register = on => {
       closeOnEscape: true,
       columns: 58,
     })
-    currentTime = await $.clock.now()
+    const now = await $.clock.now()
+    if (generation !== sessionGeneration) return { text: 'Work queue opened.' }
+    currentTime = now
     $.ui.invalidate('ui.render')
     return { text: 'Work queue opened.' }
   }).catch(() => ({ text: 'Work Queue could not open the task pane.' }))
 
   on('classic.TaskCreated', async ($, event, next) => {
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
     const now = await $.clock.now()
+    if (generation !== sessionGeneration) return result
     currentTime = now
     const task = ensureTask(event.task_id, now, event.task_subject)
     task.subject = event.task_subject
@@ -568,8 +592,11 @@ export const register: Register = on => {
   }).catch(($, event, next) => next(event))
 
   on('classic.TaskCompleted', async ($, event, next) => {
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
     const now = await $.clock.now()
+    if (generation !== sessionGeneration) return result
     currentTime = now
     const task = ensureTask(event.task_id, now, event.task_subject)
     task.subject = event.task_subject
@@ -586,10 +613,13 @@ export const register: Register = on => {
     if (event.tool === LIST_TOOL) return listOwnedTasks()
     if (event.tool === CLEAR_TOOL) return clearTasks($)
 
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
     if (result.isError || result.deny) return result
 
     const now = await $.clock.now()
+    if (generation !== sessionGeneration) return result
     currentTime = now
 
     if (event.tool === 'TaskCreate') {
