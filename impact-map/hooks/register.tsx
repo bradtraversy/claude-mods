@@ -220,6 +220,7 @@ export const register: Register = on => {
     const generation = sessionGeneration
     const result = await next(event)
     if (generation !== sessionGeneration) return result
+    if ('deny' in result || result.isError) return result
 
     if (!workspaceRoot && (
       event.tool === 'Read' || event.tool === 'Edit' || event.tool === 'Write'
