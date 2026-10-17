@@ -27,3 +27,34 @@ test('renders a completed tool card on terminal and desktop', async $ => {
     await ui.unmount()
   }
 })
+
+test('uses distinct colors for every tool state', async $ => {
+  const states = [
+    { label: 'RUNNING', color: 'warning', isRunning: true, isErrored: false, isInterrupted: false },
+    { label: 'DONE   ', color: 'success', isRunning: false, isErrored: false, isInterrupted: false },
+    { label: 'FAILED ', color: 'error', isRunning: false, isErrored: true, isInterrupted: false },
+    { label: 'STOPPED', color: 'inactive', isRunning: false, isErrored: false, isInterrupted: true },
+  ] as const
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    for (const state of states) {
+      const ui = await $.ui.mount({
+        plugin: 'tool-cards',
+        surface,
+        component: 'ToolUse',
+        requestId: `tool-${state.label.trim().toLowerCase()}`,
+        props: {
+          ...PROPS,
+          isRunning: state.isRunning,
+          isErrored: state.isErrored,
+          isInterrupted: state.isInterrupted,
+        },
+      })
+
+      expect((await ui.find({ type: 'Text', text: state.label }))?.props).toMatchObject({
+        color: state.color,
+      })
+      await ui.unmount()
+    }
+  }
+})
