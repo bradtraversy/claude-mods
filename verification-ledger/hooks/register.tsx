@@ -2,6 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { CI_POLL_INTERVAL_MS, MAX_CI_RUNS } from './config.ts'
 
 const PANE = 'verification-ledger'
+const CHECK_ORDER: CheckKind[] = ['verify', 'test', 'lint', 'typecheck', 'build']
 
 type CheckKind = 'verify' | 'test' | 'lint' | 'typecheck' | 'build'
 type ResultStatus = 'pass' | 'fail'
@@ -39,6 +40,12 @@ type CiRun = {
 type CommandResult = {
   exitCode: number
   stdout: string
+}
+
+type LedgerSummary = {
+  headline: string
+  detail: string
+  color: 'success' | 'error' | 'warning' | 'inactive'
 }
 
 const checks = new Map<CheckKind, LocalCheck>()
@@ -322,7 +329,7 @@ function statusColor(status: DisplayStatus): 'success' | 'error' | 'warning' | '
 }
 
 function statusLabel(status: DisplayStatus): string {
-  return status.toUpperCase().padEnd(7)
+  return status.toUpperCase()
 }
 
 function timeLabel(value: number | null): string {
@@ -336,6 +343,71 @@ function branchState(): string {
   if (git.behind !== null && git.behind > 0) parts.push(`${git.behind} behind`)
   if (git.ahead === null) parts.push('no upstream')
   return parts.join(' · ')
+}
+
+function countLabel(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? '' : 's'}`
+}
+
+function ledgerSummary(localChecks: readonly LocalCheck[]): LedgerSummary {
+  const localResults = localChecks.map(check => ({ check, status: localStatus(check) }))
+  const failed = localResults.filter(result => result.status === 'fail')
+  const stale = localResults.filter(result => result.status === 'stale')
+  const remote = ciOverall(ciRuns)
+
+  if (failed.length > 0) {
+    return {
+      headline: `${countLabel(failed.length, 'check')} failed`,
+      detail: `Fix ${failed[0].check.label}${failed.length > 1 ? ` and ${failed.length - 1} more` : ''} before review.`,
+      color: 'error',
+    }
+  }
+
+  if (remote === 'fail') {
+    return {
+      headline: 'GitHub CI failed',
+      detail: 'Open the failed workflow below before review.',
+      color: 'error',
+    }
+  }
+
+  if (stale.length > 0) {
+    return {
+      headline: 'Checks need a rerun',
+      detail: `Rerun ${stale[0].check.label}${stale.length > 1 ? ` and ${stale.length - 1} more` : ''} after the latest changes.`,
+      color: 'warning',
+    }
+  }
+
+  if (remote === 'running') {
+    return {
+      headline: 'GitHub CI is running',
+      detail: localChecks.length > 0 ? 'Local checks pass. Waiting for the workflow.' : 'Waiting for the workflow to finish.',
+      color: 'warning',
+    }
+  }
+
+  if (localChecks.length === 0) {
+    return {
+      headline: git.root ? 'No checks yet' : 'No repository detected',
+      detail: git.root ? 'Run tests, lint, typecheck, build, or verify.' : 'Open a Git project to track release readiness.',
+      color: 'inactive',
+    }
+  }
+
+  if (remote === 'pass' && git.dirtyFiles === 0) {
+    return {
+      headline: 'Ready for review',
+      detail: 'Local checks and GitHub CI are current.',
+      color: 'success',
+    }
+  }
+
+  return {
+    headline: 'Local checks pass',
+    detail: `${countLabel(localChecks.length, 'check')} current. No passing CI result for this commit.`,
+    color: 'success',
+  }
 }
 
 export const register: Register = on => {
@@ -448,32 +520,55 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, event) => {
     const { Box, Button, Link, Text } = $.ui.resolve(event)
-    const localChecks = [...checks.values()]
+    const localChecks = CHECK_ORDER
+      .map(kind => checks.get(kind))
+      .filter((check): check is LocalCheck => check !== undefined)
+    const summary = ledgerSummary(localChecks)
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Box gap={2}>
-          <Text bold>Verification Ledger</Text>
+        <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text bold wrap="truncate-end">Verification Ledger</Text>
+          </Box>
           <Button
             key="refresh"
             label={refreshTask ? 'Refreshing' : 'Refresh'}
             hotkey="r"
+            variant="secondary"
             onPress={() => {
               void refreshAll($)
             }}
           />
         </Box>
 
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={summary.color}
+          paddingX={1}
+          overflow="hidden"
+        >
+          <Box gap={1} overflow="hidden">
+            <Text color={summary.color} bold>●</Text>
+            <Text bold wrap="truncate-end">{summary.headline}</Text>
+          </Box>
+          <Text dimColor wrap="truncate-end">{summary.detail}</Text>
+        </Box>
+
         {git.root ? (
-          <Box flexDirection="column">
-            <Text bold>{git.branch} @ {git.shortHead}</Text>
-            <Text dimColor>{branchState()}</Text>
+          <Box flexDirection="column" overflow="hidden">
+            <Box gap={1} overflow="hidden">
+              <Text bold wrap="truncate-middle">{git.branch}</Text>
+              <Text dimColor>{git.shortHead}</Text>
+            </Box>
+            <Text dimColor wrap="truncate-end">{branchState()}</Text>
           </Box>
         ) : (
-          <Text color="warning">Not inside a Git repository.</Text>
+          <Text dimColor>Git status unavailable.</Text>
         )}
 
-        <Box flexDirection="column">
+        <Box flexDirection="column" gap={1}>
           <Text bold>Local checks</Text>
           {localChecks.length === 0 ? (
             <Text dimColor>No verification commands recorded this session.</Text>
@@ -481,27 +576,47 @@ export const register: Register = on => {
             localChecks.map(check => {
               const status = localStatus(check)
               return (
-                <Box key={check.kind} gap={1}>
-                  <Text color={statusColor(status)} bold>{statusLabel(status)}</Text>
-                  <Text bold>{check.label}</Text>
-                  <Text dimColor>{timeLabel(check.completedAt)}</Text>
+                <Box
+                  key={check.kind}
+                  justifyContent="space-between"
+                  alignItems="center"
+                  gap={1}
+                  overflow="hidden"
+                >
+                  <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                    <Text color={statusColor(status)}>●</Text>
+                    <Text bold wrap="truncate-end">{check.label}</Text>
+                  </Box>
+                  <Box gap={1} flexShrink={0}>
+                    <Text dimColor>{timeLabel(check.completedAt)}</Text>
+                    <Text color={statusColor(status)} bold>{statusLabel(status)}</Text>
+                  </Box>
                 </Box>
               )
             })
           )}
         </Box>
 
-        <Box flexDirection="column">
+        <Box flexDirection="column" gap={1}>
           <Text bold>GitHub CI</Text>
           {ciRuns.length === 0 ? (
-            <Text dimColor>{ciMessage}</Text>
+            <Text dimColor wrap="truncate-end">{ciMessage}</Text>
           ) : (
             ciRuns.map((run, index) => {
               const status = ciStatus(run)
               return (
-                <Box key={`${run.url}:${index}`} gap={1}>
+                <Box
+                  key={`${run.url}:${index}`}
+                  justifyContent="space-between"
+                  alignItems="center"
+                  gap={1}
+                  overflow="hidden"
+                >
+                  <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                    <Text color={statusColor(status)}>●</Text>
+                    {run.url ? <Link href={run.url} label={run.name} /> : <Text wrap="truncate-end">{run.name}</Text>}
+                  </Box>
                   <Text color={statusColor(status)} bold>{statusLabel(status)}</Text>
-                  {run.url ? <Link href={run.url} label={run.name} /> : <Text>{run.name}</Text>}
                 </Box>
               )
             })

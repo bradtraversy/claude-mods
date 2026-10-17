@@ -23,7 +23,7 @@
     {
       "name": "verification-ledger",
       "source": "./verification-ledger",
-      "description": "Tracks local verification commands and GitHub Actions for the current commit"
+      "description": "Shows release readiness across local checks, Git state, and GitHub Actions"
     },
     {
       "name": "agent-pulse",

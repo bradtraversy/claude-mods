@@ -1,6 +1,6 @@
 # Verification Ledger
 
-Verification Ledger opens a Checks pane that combines local verification commands, current Git state, and GitHub Actions runs for the current commit.
+Verification Ledger opens a Checks pane that turns local verification commands, current Git state, and GitHub Actions runs into a live release-readiness dashboard.
 
 ![Verification Ledger showing local checks, Git state, and GitHub CI](../docs/images/verification-ledger.png)
 
@@ -15,6 +15,8 @@ Restart the session or enter `/reload-plugins` after installation.
 ## Usage
 
 The pane opens automatically after Claude finishes the first recognized verification command in a session. It opens without taking keyboard focus.
+
+The status card gives the most important result first: ready for review, a failed check, stale evidence that needs a rerun, CI still running, or no checks yet. Local checks stay in a fixed order with their time and current state aligned for quick scanning. Git and GitHub CI remain visible as supporting evidence rather than competing summaries.
 
 Open it manually or bring it back after closing it with:
 
@@ -89,9 +91,9 @@ Change the values to control how often the open pane refreshes and how many work
 3. Confirm that the Checks pane opens without taking keyboard focus.
 4. Confirm that `Tests` appears with `PASS` or `FAIL`.
 5. Ask Claude to edit a file.
-6. Reopen or refresh `/checks` and confirm that the earlier result is `STALE`.
+6. Reopen or refresh `/checks` and confirm that the status card asks for a rerun and the earlier result is `STALE`.
 7. Push a commit with GitHub Actions configured.
-8. Leave the pane open and watch the workflow move from `RUNNING` to its final state.
+8. Leave the pane open and watch the workflow move from `RUNNING` to its final state. When local checks and GitHub CI pass for a clean commit, the card should say `Ready for review`.
 
 ## Source
 

@@ -1,6 +1,6 @@
 {
   "name": "verification-ledger",
-  "version": "0.2.0",
-  "description": "Tracks local verification commands and GitHub Actions for the current commit",
+  "version": "0.3.0",
+  "description": "Shows release readiness across local checks, Git state, and GitHub Actions",
   "author": { "name": "Brad Traversy" }
 }
