@@ -1,6 +1,6 @@
 {
   "name": "impact-map",
-  "version": "0.2.0",
-  "description": "Tracks touched files and opens current Git diffs for changed files",
+  "version": "0.3.1",
+  "description": "Groups session file activity by folder with change totals and current Git diffs",
   "author": { "name": "Brad Traversy" }
 }

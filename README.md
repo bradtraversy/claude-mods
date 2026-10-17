@@ -12,7 +12,7 @@ Every mod is a small, independent Claude Code plugin written in TypeScript. Inst
 | Mod | What it does | How to open or test it |
 | --- | --- | --- |
 | [Session HUD](./session-hud/README.md) | Shows the current Git branch, context, and weekly usage with detailed session information | Switch branches or click `Details` beside the context meter |
-| [Impact Map](./impact-map/README.md) | Tracks touched files and opens current Git diffs | Select an edited or created file in the Impact Map |
+| [Impact Map](./impact-map/README.md) | Groups session file activity by folder with change totals and current Git diffs | Filter changed files or select one in the Impact Map |
 | [Tool Cards](./tool-cards/README.md) | Replaces normal tool-use rows with diagnostic cards for status, timing, results, and details | Ask Claude to read a file, edit code, or run a command |
 | [Verification Ledger](./verification-ledger/README.md) | Tracks local checks, Git state, and GitHub Actions | Run a recognized check or enter `/checks` |
 | [Agent Pulse](./agent-pulse/README.md) | Shows live subagent status, activity, elapsed time, and recent transcripts | Ask Claude to use a subagent or enter `/agent-pulse` |

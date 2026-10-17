@@ -13,7 +13,7 @@
     {
       "name": "impact-map",
       "source": "./impact-map",
-      "description": "Tracks touched files and opens current Git diffs for changed files"
+      "description": "Groups session file activity by folder with change totals and current Git diffs"
     },
     {
       "name": "tool-cards",
