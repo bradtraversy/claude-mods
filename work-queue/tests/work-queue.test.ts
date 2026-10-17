@@ -322,12 +322,13 @@ test('hydrates task lists and task details returned by Claude tools', async ($, 
 
   const listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
   const listedResult = JSON.parse(String(listed.result)) as {
-    tasks: Array<{ id: string; source: string; editable: boolean }>
+    tasks: Array<{ id: string; source: string; editable: boolean; blocks: string[] }>
   }
   expect(listedResult.tasks.find(task => task.id === '10')).toMatchObject({
     source: 'claude',
     editable: false,
   })
+  expect(listedResult.tasks.find(task => task.id === '11')?.blocks).toEqual(['10'])
 
   const denied = await $.tool.call({
     tool: 'mcp__work-queue__task_update',
@@ -355,6 +356,96 @@ test('hydrates task lists and task details returned by Claude tools', async ($, 
   })).toBeDefined()
   expect(await ui.find({ type: 'Button', key: 'dependency:11' })).toBeDefined()
   await ui.unmount()
+})
+
+test('keeps native dependency links symmetric and removes replaced edges', async ($, on) => {
+  let listVersion = 0
+
+  mock.clock(on)
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('tool.call', ($, event) => {
+    if (event.tool === 'TaskUpdate') return { result: { success: true } }
+    if (event.tool === 'TaskList') {
+      const blockedBy = listVersion === 0 ? ['native-b'] : []
+      listVersion += 1
+      return {
+        result: {
+          tasks: [
+            { id: 'native-a', subject: 'Task A', status: 'pending', blockedBy },
+            { id: 'native-b', subject: 'Task B', status: 'pending', blockedBy: [] },
+          ],
+        },
+      }
+    }
+    return { result: 'ok' }
+  })
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
+  await $.tool.call({ tool: 'TaskList' })
+
+  let listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  let tasks = JSON.parse(String(listed.result)).tasks as Array<{
+    id: string
+    blockedBy: string[]
+    blocks: string[]
+  }>
+  expect(tasks.find(task => task.id === 'native-a')?.blockedBy).toEqual(['native-b'])
+  expect(tasks.find(task => task.id === 'native-b')?.blocks).toEqual(['native-a'])
+
+  await $.tool.call({ tool: 'TaskList' })
+  listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  tasks = JSON.parse(String(listed.result)).tasks
+  expect(tasks.find(task => task.id === 'native-a')?.blockedBy).toEqual([])
+  expect(tasks.find(task => task.id === 'native-b')?.blocks).toEqual([])
+
+  await $.tool.call({ tool: 'TaskUpdate', taskId: 'native-b', addBlocks: ['native-a'] } as never)
+  listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  tasks = JSON.parse(String(listed.result)).tasks
+  expect(tasks.find(task => task.id === 'native-a')?.blockedBy).toEqual(['native-b'])
+  expect(tasks.find(task => task.id === 'native-b')?.blocks).toEqual(['native-a'])
+})
+
+test('rejects dependency cycles without changing the graph', async ($, on) => {
+  mock.clock(on)
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+  await $.tool.call({ tool: 'mcp__work-queue__task_create', subject: 'Task A' })
+  await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Task B',
+    blockedBy: ['queue-1'],
+  })
+
+  const rejected = await $.tool.call({
+    tool: 'mcp__work-queue__task_update',
+    taskId: 'queue-1',
+    blockedBy: ['queue-2'],
+  })
+  expect(rejected.deny).toBe(
+    'Task queue-1 cannot be blocked by queue-2 because that would create a dependency cycle.',
+  )
+
+  const listed = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  const tasks = JSON.parse(String(listed.result)).tasks as Array<{
+    id: string
+    blockedBy: string[]
+    blocks: string[]
+  }>
+  expect(tasks.find(task => task.id === 'queue-1')).toMatchObject({
+    blockedBy: [],
+    blocks: ['queue-2'],
+  })
+  expect(tasks.find(task => task.id === 'queue-2')).toMatchObject({
+    blockedBy: ['queue-1'],
+    blocks: [],
+  })
 })
 
 test('rejects unknown blockers without creating phantom tasks', async ($, on) => {
