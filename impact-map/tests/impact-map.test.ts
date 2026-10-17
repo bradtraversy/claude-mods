@@ -121,3 +121,34 @@ test('opens current diffs for edited and created files on terminal and desktop',
     await ui.unmount()
   }
 })
+
+test('clears file activity when clear starts a new session', async ($, on) => {
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('session.end', ($, event) => ({ sessionId: event.sessionId }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('tool.call', () => ({ result: 'ok' }))
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
+  await $.tool.call({ tool: 'Read', file_path: '/project/src/old-session.ts' })
+
+  const ui = await $.ui.mount({
+    plugin: 'impact-map',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'impact-map',
+    props: PROPS,
+  })
+  expect(await ui.find({ type: 'Text', text: 'old-session.ts' })).toBeDefined()
+
+  await $.session.end({
+    reason: 'clear',
+    sessionId: 'session-1',
+    resume: { id: 'session-1' },
+  })
+  await ui.redraw(PROPS)
+
+  expect(await ui.find({ type: 'Text', text: 'No files touched yet.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'old-session.ts' })).toBeUndefined()
+  await ui.unmount()
+})

@@ -28,6 +28,7 @@ let transcriptError = ''
 let currentTime = 0
 let didAutoOpen = false
 let pollTimer: Timer | null = null
+let sessionGeneration = 0
 
 function isFinished(status: AgentStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'killed'
@@ -95,7 +96,8 @@ function sameAgent(left: AgentInfo, right: AgentInfo): boolean {
     && left.name === right.name
 }
 
-function resetState(): void {
+function clearSessionState(): void {
+  sessionGeneration += 1
   records.clear()
   selectedAgentId = ''
   transcript = []
@@ -103,6 +105,9 @@ function resetState(): void {
   transcriptError = ''
   currentTime = 0
   didAutoOpen = false
+}
+
+function stopPolling(): void {
   pollTimer?.cancel()
   pollTimer = null
 }
@@ -131,7 +136,10 @@ function rememberAgent(info: AgentInfo, now: number): boolean {
 }
 
 async function refreshAgents($: EngineInterface): Promise<void> {
+  const generation = sessionGeneration
   const [agents, now] = await Promise.all([$.agent.list(), $.clock.now()])
+  if (generation !== sessionGeneration) return
+
   let changed = currentTime !== now
   currentTime = now
 
@@ -158,6 +166,7 @@ async function refreshOpenPane($: EngineInterface): Promise<void> {
 }
 
 async function loadTranscript($: EngineInterface, agentId: string): Promise<void> {
+  const generation = sessionGeneration
   selectedAgentId = agentId
   transcript = []
   transcriptError = ''
@@ -166,7 +175,7 @@ async function loadTranscript($: EngineInterface, agentId: string): Promise<void
 
   try {
     const result = await $.session.messages({ agentId })
-    if (selectedAgentId !== agentId) return
+    if (generation !== sessionGeneration || selectedAgentId !== agentId) return
 
     if (Array.isArray(result)) {
       transcript = result.slice(-TRANSCRIPT_LIMIT)
@@ -174,10 +183,10 @@ async function loadTranscript($: EngineInterface, agentId: string): Promise<void
       transcriptError = result.deny
     }
   } catch (error) {
-    if (selectedAgentId !== agentId) return
+    if (generation !== sessionGeneration || selectedAgentId !== agentId) return
     transcriptError = error instanceof Error ? error.message : String(error)
   } finally {
-    if (selectedAgentId === agentId) {
+    if (generation === sessionGeneration && selectedAgentId === agentId) {
       transcriptLoading = false
       $.ui.invalidate('ui.render')
     }
@@ -206,7 +215,8 @@ function seedSpawnedAgent(
 
 export const register: Register = on => {
   on('session.start', async ($, event, next) => {
-    resetState()
+    stopPolling()
+    clearSessionState()
     await $.command.register({
       name: 'agent-pulse',
       description: 'Open the live subagent activity pane',
@@ -218,8 +228,12 @@ export const register: Register = on => {
   })
 
   on('session.end', ($, event, next) => {
-    pollTimer?.cancel()
-    pollTimer = null
+    if (event.reason === 'clear' || event.reason === 'resume') {
+      clearSessionState()
+      $.ui.invalidate('ui.render')
+    } else {
+      stopPolling()
+    }
     return next(event)
   })
 
@@ -242,11 +256,14 @@ export const register: Register = on => {
   }).catch(() => ({ text: 'Agent Pulse could not open the activity pane.' }))
 
   on('agent.spawn', async ($, event, next) => {
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
 
     if ('agentId' in result && result.agentId) {
       try {
         const now = await $.clock.now()
+        if (generation !== sessionGeneration) return result
         currentTime = now
         seedSpawnedAgent(result.agentId, event, now)
 
@@ -266,21 +283,27 @@ export const register: Register = on => {
   }).catch(($, event, next) => next(event))
 
   on('tool.call', async ($, event, next) => {
+    const generation = sessionGeneration
     const agentId = event.agentId
     const record = agentId ? records.get(agentId) : undefined
 
     if (record) {
+      const now = await $.clock.now()
+      if (generation !== sessionGeneration) return next(event)
       record.currentTool = event.tool
-      record.lastChangedAt = await $.clock.now()
+      record.lastChangedAt = now
       $.ui.invalidate('ui.render')
     }
 
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
 
     if (record) {
+      const now = await $.clock.now()
+      if (generation !== sessionGeneration) return result
       record.currentTool = ''
       record.lastTool = event.tool
-      record.lastChangedAt = await $.clock.now()
+      record.lastChangedAt = now
       $.ui.invalidate('ui.render')
       void refreshAgents($)
     }
@@ -289,13 +312,17 @@ export const register: Register = on => {
   }).catch(($, event, next) => next(event))
 
   on('turn.complete', async ($, event, next) => {
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
     if (!event.agentId) return result
 
     const record = records.get(event.agentId)
     if (record) {
+      const now = await $.clock.now()
+      if (generation !== sessionGeneration) return result
       record.currentTool = ''
-      record.lastChangedAt = await $.clock.now()
+      record.lastChangedAt = now
       $.ui.invalidate('ui.render')
     }
 

@@ -28,6 +28,7 @@ let branchRefreshing = false
 let editingContextTarget = false
 let contextTargetDraft = ''
 let contextTargetError = ''
+let breakdownGeneration = 0
 
 type BranchState = {
   kind: 'loading' | 'branch' | 'default' | 'detached' | 'none' | 'error'
@@ -45,6 +46,19 @@ type McpServerGroup = {
   loadedTools: number
   deferredTools: number
   tools: ContextMcpTool[]
+}
+
+function clearSessionDetails(): void {
+  breakdownGeneration += 1
+  breakdown = null
+  breakdownError = ''
+  breakdownLoading = false
+  detailUsage = null
+  selectedMcpServer = null
+  mcpPage = 0
+  editingContextTarget = false
+  contextTargetDraft = ''
+  contextTargetError = ''
 }
 
 function meter(percent: number, width: number): { filled: string; remaining: string } {
@@ -273,8 +287,13 @@ function groupMcpTools(tools: readonly ContextMcpTool[]): McpServerGroup[] {
     })
 }
 
-async function refreshBreakdown($: EngineInterface, columns: number): Promise<void> {
+async function refreshBreakdown(
+  $: EngineInterface,
+  columns: number,
+  generation = breakdownGeneration,
+): Promise<void> {
   if (breakdownLoading) return
+  if (generation !== breakdownGeneration) return
 
   breakdownLoading = true
   breakdownError = ''
@@ -282,18 +301,23 @@ async function refreshBreakdown($: EngineInterface, columns: number): Promise<vo
 
   try {
     const usage = await $.session.usage({ breakdown: 'full', columns })
+    if (generation !== breakdownGeneration) return
     detailUsage = usage
     breakdown = usage.context.breakdown ?? null
     if (!breakdown) breakdownError = 'Claude Code did not return a context breakdown yet.'
   } catch (error) {
+    if (generation !== breakdownGeneration) return
     breakdownError = error instanceof Error ? error.message : String(error)
   } finally {
-    breakdownLoading = false
-    $.ui.invalidate('ui.render')
+    if (generation === breakdownGeneration) {
+      breakdownLoading = false
+      $.ui.invalidate('ui.render')
+    }
   }
 }
 
 async function openBreakdown($: EngineInterface): Promise<void> {
+  const generation = breakdownGeneration
   selectedMcpServer = null
   mcpPage = 0
   await $.ui.open({
@@ -303,13 +327,14 @@ async function openBreakdown($: EngineInterface): Promise<void> {
     closeOnEscape: true,
     columns: 58,
   })
-  await refreshBreakdown($, 58)
+  await refreshBreakdown($, 58, generation)
 }
 
 export const register: Register = (on, options) => {
   const contextTarget = contextMaxTokens(options.context_max_tokens)
 
   on('session.start', async ($, event, next) => {
+    clearSessionDetails()
     branchState = { kind: 'loading', label: 'Checking branch' }
     await refreshBranch($, event.cwd)
 
@@ -320,6 +345,14 @@ export const register: Register = (on, options) => {
       })
     }
 
+    return next(event)
+  })
+
+  on('session.end', ($, event, next) => {
+    if (event.reason === 'clear' || event.reason === 'resume') {
+      clearSessionDetails()
+      $.ui.invalidate('ui.render')
+    }
     return next(event)
   })
 

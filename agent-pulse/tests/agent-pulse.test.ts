@@ -155,3 +155,60 @@ test('shows live agent activity and a recent transcript on terminal and desktop'
     await ui.unmount()
   }
 })
+
+test('clears agents and keeps polling after clear starts a new session', async ($, on) => {
+  let agents: AgentInfo[] = []
+  const opened: PaneOpenArgs[] = []
+  const clock = mock.clock(on)
+
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('session.end', ($, event) => ({ sessionId: event.sessionId }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('agent.list', () => ({ value: agents }))
+  on('ui.open', ($, event) => {
+    opened.push(event)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.panes', () => ({
+    value: [{
+      id: 'agent-pulse',
+      title: 'Agents',
+      isShown: true,
+      isFocused: false,
+      isPlaced: true,
+    }],
+  }))
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
+  agents = [RUNNING_AGENT]
+  await clock.advance(2_000)
+  await Promise.resolve()
+
+  const ui = await $.ui.mount({
+    plugin: 'agent-pulse',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'agent-pulse',
+    props: PANE_PROPS,
+  })
+  expect(await ui.find({ type: 'Text', text: RUNNING_AGENT.name })).toBeDefined()
+
+  await $.session.end({
+    reason: 'clear',
+    sessionId: 'session-1',
+    resume: { id: 'session-1' },
+  })
+  agents = []
+  await ui.redraw(PANE_PROPS)
+  expect(await ui.find({ type: 'Text', text: 'No subagents in this session.' })).toBeDefined()
+
+  agents = [{ ...RUNNING_AGENT, id: 'agent-2', name: 'new-session-agent' }]
+  await clock.advance(2_000)
+  await Promise.resolve()
+  await ui.redraw(PANE_PROPS)
+
+  expect(await ui.find({ type: 'Text', text: 'new-session-agent' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: RUNNING_AGENT.name })).toBeUndefined()
+  expect(opened).toHaveLength(2)
+  await ui.unmount()
+})

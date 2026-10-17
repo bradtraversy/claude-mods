@@ -29,6 +29,19 @@ let diffMessage = ''
 let diffError = ''
 let diffLoading = false
 let diffRequest = 0
+let sessionGeneration = 0
+
+function clearSessionState(): void {
+  sessionGeneration += 1
+  files.clear()
+  workspaceRoot = ''
+  selectedFile = null
+  diffSource = ''
+  diffMessage = ''
+  diffError = ''
+  diffLoading = false
+  diffRequest += 1
+}
 
 function remember(path: string, action: FileAction): void {
   files.delete(path)
@@ -160,6 +173,7 @@ async function refreshDiff($: EngineInterface, file: ImpactFile): Promise<void> 
 }
 
 async function openDiff($: EngineInterface, file: ImpactFile): Promise<void> {
+  const generation = sessionGeneration
   selectedFile = file
   diffLoading = true
   diffSource = ''
@@ -173,11 +187,13 @@ async function openDiff($: EngineInterface, file: ImpactFile): Promise<void> {
     closeOnEscape: true,
     columns: 88,
   })
+  if (generation !== sessionGeneration) return
   await refreshDiff($, file)
 }
 
 export const register: Register = on => {
   on('session.start', async ($, event, next) => {
+    clearSessionState()
     workspaceRoot = event.cwd
     await $.command.register({
       name: 'impact-map',
@@ -187,18 +203,30 @@ export const register: Register = on => {
     return next(event)
   })
 
+  on('session.end', ($, event, next) => {
+    if (event.reason === 'clear' || event.reason === 'resume') {
+      clearSessionState()
+      $.ui.invalidate('ui.render')
+    }
+    return next(event)
+  })
+
   on('command.run', { command: 'impact-map' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Impact Map', focus: true })
     return { text: 'Workspace impact map opened.' }
   })
 
   on('tool.call', async ($, event, next) => {
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
 
     if (!workspaceRoot && (
       event.tool === 'Read' || event.tool === 'Edit' || event.tool === 'Write'
     )) {
-      workspaceRoot = await $.session.cwd()
+      const cwd = await $.session.cwd()
+      if (generation !== sessionGeneration) return result
+      workspaceRoot = cwd
     }
 
     if (event.tool === 'Read') remember(event.file_path, 'read')

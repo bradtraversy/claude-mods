@@ -226,3 +226,56 @@ test('uses the saved context target', { options: { context_max_tokens: 200_000 }
   expect(await ui.find({ type: 'Text', text: 'Context 26% of 200k' })).toBeDefined()
   await ui.unmount()
 })
+
+test('clears detailed usage when clear starts a new session', async ($, on) => {
+  mock.clock(on)
+  on('session.usage', () => ({
+    value: {
+      ...USAGE,
+      context: { ...USAGE.context, breakdown: BREAKDOWN },
+    },
+  }))
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('session.end', ($, event) => ({ sessionId: event.sessionId }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.cwd', () => ({ value: '/project' }))
+  on('process.run', () => ({
+    value: {
+      exitCode: 0,
+      stdout: 'main',
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+  const band = await $.ui.mount({
+    plugin: 'session-hud',
+    surface: 'desktop',
+    component: 'AbovePrompt',
+    props: PROPS,
+  })
+  await band.press({ key: 'context-details' })
+
+  const pane = await $.ui.mount({
+    plugin: 'session-hud',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-breakdown',
+    props: PANE_PROPS,
+  })
+  expect(await pane.find({ type: 'Text', text: 'Messages' })).toBeDefined()
+
+  await $.session.end({
+    reason: 'clear',
+    sessionId: 'session-1',
+    resume: { id: 'session-1' },
+  })
+  await pane.redraw(PANE_PROPS)
+
+  expect(await pane.find({ type: 'Text', text: 'Counting context tokens...' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'Messages' })).toBeUndefined()
+  await pane.unmount()
+  await band.unmount()
+})

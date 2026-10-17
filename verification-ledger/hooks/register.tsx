@@ -50,6 +50,7 @@ let revision = 0
 let refreshTask: Promise<void> | null = null
 let pollStarted = false
 let didAutoOpen = false
+let sessionGeneration = 0
 
 function emptyGitSnapshot(): GitSnapshot {
   return {
@@ -62,6 +63,18 @@ function emptyGitSnapshot(): GitSnapshot {
     ahead: null,
     behind: null,
   }
+}
+
+function clearSessionState(): void {
+  sessionGeneration += 1
+  checks.clear()
+  git = emptyGitSnapshot()
+  ciRuns = []
+  ciMessage = 'Open this pane to load GitHub CI.'
+  ciRefreshedAt = null
+  revision = 0
+  refreshTask = null
+  didAutoOpen = false
 }
 
 function classifyCheck(command: string): { kind: CheckKind; label: string } | null {
@@ -146,9 +159,16 @@ async function readGitSnapshot($: EngineInterface): Promise<GitSnapshot> {
   }
 }
 
-async function refreshLocal($: EngineInterface): Promise<void> {
-  git = await readGitSnapshot($)
+async function refreshLocal(
+  $: EngineInterface,
+  generation = sessionGeneration,
+): Promise<boolean> {
+  const snapshot = await readGitSnapshot($)
+  if (generation !== sessionGeneration) return false
+
+  git = snapshot
   $.ui.invalidate('ui.render')
+  return true
 }
 
 function ciStatus(run: CiRun): DisplayStatus {
@@ -165,11 +185,19 @@ function ciOverall(runs: readonly CiRun[]): 'none' | 'running' | 'pass' | 'fail'
   return 'pass'
 }
 
-async function refreshCi($: EngineInterface): Promise<void> {
-  if (!git.root || !git.head) {
+async function refreshCi(
+  $: EngineInterface,
+  generation = sessionGeneration,
+): Promise<void> {
+  const snapshot = git
+
+  if (!snapshot.root || !snapshot.head) {
+    const refreshedAt = await $.clock.now()
+    if (generation !== sessionGeneration) return
+
     ciRuns = []
     ciMessage = 'GitHub CI requires a Git repository with a commit.'
-    ciRefreshedAt = await $.clock.now()
+    ciRefreshedAt = refreshedAt
     return
   }
 
@@ -181,16 +209,18 @@ async function refreshCi($: EngineInterface): Promise<void> {
       'run',
       'list',
       '--commit',
-      git.head,
+      snapshot.head,
       '--limit',
       String(MAX_CI_RUNS),
       '--json',
       'name,status,conclusion,url,headSha,workflowName',
     ],
-    git.root,
+    snapshot.root,
   )
 
-  ciRefreshedAt = await $.clock.now()
+  const refreshedAt = await $.clock.now()
+  if (generation !== sessionGeneration) return
+  ciRefreshedAt = refreshedAt
 
   if (result.exitCode !== 0) {
     ciRuns = []
@@ -221,11 +251,11 @@ async function refreshCi($: EngineInterface): Promise<void> {
         url: typeof item.url === 'string' ? item.url : '',
         headSha: typeof item.headSha === 'string' ? item.headSha : '',
       }))
-      .filter(run => !run.headSha || run.headSha === git.head)
+      .filter(run => !run.headSha || run.headSha === snapshot.head)
       .slice(0, MAX_CI_RUNS)
 
     ciMessage = ciRuns.length === 0
-      ? `No GitHub Actions runs found for ${git.shortHead}.`
+      ? `No GitHub Actions runs found for ${snapshot.shortHead}.`
       : ''
   } catch {
     ciRuns = []
@@ -234,36 +264,41 @@ async function refreshCi($: EngineInterface): Promise<void> {
 
   const current = ciOverall(ciRuns)
   if (previous === 'running' && current === 'pass') {
-    $.ui.toast(`GitHub CI passed for ${git.shortHead}.`)
+    $.ui.toast(`GitHub CI passed for ${snapshot.shortHead}.`)
   } else if (previous === 'running' && current === 'fail') {
-    $.ui.toast(`GitHub CI failed for ${git.shortHead}.`)
+    $.ui.toast(`GitHub CI failed for ${snapshot.shortHead}.`)
   }
 }
 
 function refreshAll($: EngineInterface): Promise<void> {
   if (refreshTask) return refreshTask
 
-  refreshTask = (async () => {
-    await refreshLocal($)
-    await refreshCi($)
+  const generation = sessionGeneration
+  let task: Promise<void>
+  task = (async () => {
+    const refreshed = await refreshLocal($, generation)
+    if (refreshed) await refreshCi($, generation)
   })().finally(() => {
-    refreshTask = null
-    $.ui.invalidate('ui.render')
+    if (refreshTask === task) refreshTask = null
+    if (generation === sessionGeneration) $.ui.invalidate('ui.render')
   })
+  refreshTask = task
 
   $.ui.invalidate('ui.render')
-  return refreshTask
+  return task
 }
 
 async function maybeAutoOpen($: EngineInterface): Promise<void> {
   if (didAutoOpen) return
 
+  const generation = sessionGeneration
   await $.ui.open({
     id: PANE,
     title: 'Checks',
     closeOnEscape: true,
     columns: 56,
   })
+  if (generation !== sessionGeneration) return
   didAutoOpen = true
   void refreshAll($)
 }
@@ -305,7 +340,7 @@ function branchState(): string {
 
 export const register: Register = on => {
   on('session.start', async ($, event, next) => {
-    didAutoOpen = false
+    clearSessionState()
     await $.command.register({
       name: 'checks',
       description: 'Open and refresh the Verification Ledger',
@@ -323,7 +358,16 @@ export const register: Register = on => {
     return next(event)
   })
 
+  on('session.end', ($, event, next) => {
+    if (event.reason === 'clear' || event.reason === 'resume') {
+      clearSessionState()
+      $.ui.invalidate('ui.render')
+    }
+    return next(event)
+  })
+
   on('command.run', { command: 'checks' }, async $ => {
+    const generation = sessionGeneration
     await $.ui.open({
       id: PANE,
       title: 'Checks',
@@ -331,14 +375,17 @@ export const register: Register = on => {
       closeOnEscape: true,
       columns: 56,
     })
+    if (generation !== sessionGeneration) return {}
     didAutoOpen = true
     await refreshAll($)
     return {}
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, event, next) => {
+    const generation = sessionGeneration
     const recognized = classifyCheck(event.command)
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
     if ('deny' in result) return result
 
     try {
@@ -347,19 +394,25 @@ export const register: Register = on => {
       const changed = completed?.bashEditDiff !== undefined
 
       if (changed) revision += 1
-      if (changed || recognized) await refreshLocal($)
+      if (changed || recognized) {
+        const refreshed = await refreshLocal($, generation)
+        if (!refreshed) return result
+      }
 
       if (recognized && !event.run_in_background && !backgrounded) {
+        const completedAt = await $.clock.now()
+        if (generation !== sessionGeneration) return result
         checks.set(recognized.kind, {
           ...recognized,
           command: event.command,
           status: result.isError ? 'fail' : 'pass',
-          completedAt: await $.clock.now(),
+          completedAt,
           fingerprint: git.fingerprint,
           revision,
         })
 
         await maybeAutoOpen($)
+        if (generation !== sessionGeneration) return result
         if (result.isError) $.ui.toast(`${recognized.label} failed.`)
         $.ui.invalidate('ui.render')
       }
@@ -378,12 +431,14 @@ export const register: Register = on => {
   }).catch(($, event, next) => next(event))
 
   on('tool.call', { tool: ['Edit', 'Write', 'NotebookEdit'] }, async ($, event, next) => {
+    const generation = sessionGeneration
     const result = await next(event)
+    if (generation !== sessionGeneration) return result
     if ('deny' in result || result.isError) return result
 
     try {
       revision += 1
-      await refreshLocal($)
+      await refreshLocal($, generation)
     } catch (error) {
       $.ui.log(`Verification Ledger could not refresh after an edit: ${String(error)}`, { to: 'debug' })
     }

@@ -395,3 +395,63 @@ test('rejects unknown blockers without creating phantom tasks', async ($, on) =>
   expect(finalResult.tasks).toHaveLength(1)
   expect(finalResult.tasks[0]).toMatchObject({ subject: 'Existing task', blockedBy: [] })
 })
+
+test('clears tasks and keeps the clock running after clear starts a new session', async ($, on) => {
+  const opened: PaneOpenArgs[] = []
+  const clock = mock.clock(on)
+
+  on('session.start', ($, event) => ({ cwd: event.cwd }))
+  on('session.end', ($, event) => ({ sessionId: event.sessionId }))
+  on('command.register', ($, event) => ({ value: { command: event.name } }))
+  on('tool.register', ($, event) => ({ value: { tool: `mcp__work-queue__${event.name}` } }))
+  on('ui.open', ($, event) => {
+    opened.push(event)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.panes', () => ({
+    value: [{
+      id: 'work-queue',
+      title: 'Tasks',
+      isShown: true,
+      isFocused: false,
+      isPlaced: true,
+    }],
+  }))
+
+  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/project' })
+  await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'Old session task',
+  })
+
+  await $.session.end({
+    reason: 'clear',
+    sessionId: 'session-1',
+    resume: { id: 'session-1' },
+  })
+
+  const empty = await $.tool.call({ tool: 'mcp__work-queue__task_list' })
+  expect(JSON.parse(String(empty.result))).toEqual({ tasks: [] })
+
+  const created = await $.tool.call({
+    tool: 'mcp__work-queue__task_create',
+    subject: 'New session task',
+  })
+  expect(JSON.parse(String(created.result))).toMatchObject({ task: { id: 'queue-1' } })
+
+  await clock.advance(65_000)
+  await Promise.resolve()
+
+  const ui = await $.ui.mount({
+    plugin: 'work-queue',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'work-queue',
+    props: PANE_PROPS,
+  })
+  expect(await ui.find({ type: 'Text', text: 'New session task' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Old session task' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '1m' })).toBeDefined()
+  expect(opened).toHaveLength(2)
+  await ui.unmount()
+})
