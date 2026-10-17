@@ -25,7 +25,7 @@ The pane leads with a summary of live and finished agents. Agents that are still
 
 Finished agents stay collapsed in a quieter section until you select `Show`. This keeps the current parallel work visible without letting completed history take over the pane.
 
-The pane does not open when a session has no subagents. It also does not take keyboard focus when it opens automatically. Enter `/agent-pulse` whenever you want to open it manually or bring it back after closing it. Claude's built-in `/agents` command remains unchanged.
+The pane does not open when a session has no subagents. Agent Pulse watches agent tool activity directly and also checks for new agents every two seconds. It does not take keyboard focus when it opens automatically. Claude Code only auto-places an unrequested terminal sidebar when the terminal is at least 144 columns wide. At 110 to 143 columns, enter `/agent-pulse` to place it manually or bring it back after closing it. Claude's built-in `/agents` command remains unchanged.
 
 Select `Details` on an agent to replace the roster with a focused detail view. The detail view shows the agent type, status, elapsed time, parent agent when present, and up to eight recent transcript messages. Select `Back` to return to the full roster.
 

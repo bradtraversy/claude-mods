@@ -1,6 +1,6 @@
 {
   "name": "work-queue",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Shows Claude's live progress, focused work, named blockers, ready tasks, and completed work",
   "author": { "name": "Brad Traversy" }
 }

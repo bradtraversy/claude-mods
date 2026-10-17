@@ -105,6 +105,10 @@ function tokenLabel(tokens: number): string {
   return `${Math.round(tokens / 1_000)}k`
 }
 
+function modelWindowLabel(tokens: number): string {
+  return tokenLabel(tokens).replace(/m$/, 'M')
+}
+
 function detailTokenLabel(tokens: number): string {
   if (tokens >= 1_000_000) {
     const millions = tokens / 1_000_000
@@ -323,8 +327,18 @@ async function refreshBreakdown(
   }
 }
 
-async function openBreakdown($: EngineInterface): Promise<void> {
+async function isBreakdownOpen($: EngineInterface): Promise<boolean> {
+  try {
+    const pane = (await $.ui.panes()).find(item => item.id === PANE)
+    return Boolean(pane?.isPlaced && pane.isShown)
+  } catch {
+    return false
+  }
+}
+
+async function openBreakdown($: EngineInterface, surface: string): Promise<void> {
   const generation = breakdownGeneration
+  const columns = surface === 'terminal' ? 52 : 58
   selectedMcpServer = null
   mcpPage = 0
   await $.ui.open({
@@ -332,9 +346,9 @@ async function openBreakdown($: EngineInterface): Promise<void> {
     title: 'Session',
     focus: true,
     closeOnEscape: true,
-    columns: 58,
+    columns,
   })
-  await refreshBreakdown($, 58, generation)
+  await refreshBreakdown($, columns, generation)
 }
 
 export const register: Register = (on, options) => {
@@ -385,6 +399,7 @@ export const register: Register = (on, options) => {
     const weeklyLimit = usage.rateLimits.find(limit => limit.kind === 'seven_day')
     const meterColor = usageColor(percent)
     const contextMeter = meter(percent, width)
+    const detailsOpen = event.surface === 'terminal' && await isBreakdownOpen($)
 
     return (
       <Box flexDirection="column">
@@ -404,14 +419,16 @@ export const register: Register = (on, options) => {
             <Text color={meterColor} bold>{percent}% of {tokenLabel(contextTarget)}</Text>
           </Box>
           {weeklyLimit && <Text dimColor>Week {weeklyLimit.percentUsed}%</Text>}
-          <Button
-            key="context-details"
-            label="Details"
-            variant="secondary"
-            onPress={() => {
-              void openBreakdown($)
-            }}
-          />
+          {!detailsOpen && (
+            <Button
+              key="context-details"
+              label="Details"
+              variant="secondary"
+              onPress={() => {
+                void openBreakdown($, event.surface)
+              }}
+            />
+          )}
         </Box>
       </Box>
     )
@@ -420,6 +437,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, event) => {
     const { Box, Button, Text } = $.ui.resolve(event)
     const current = breakdown
+    const isTerminal = event.surface === 'terminal'
 
     if (!current) {
       return (
@@ -465,7 +483,7 @@ export const register: Register = (on, options) => {
       0,
       Math.round((current.totalTokens / current.rawMaxTokens) * 100),
     )
-    const barWidth = Math.max(12, Math.min(34, event.props.bodyColumns - 8))
+    const barWidth = Math.max(12, Math.min(isTerminal ? 28 : 34, event.props.bodyColumns - 8))
     const shortBarWidth = Math.max(10, Math.min(22, event.props.bodyColumns - 20))
     const progressBar = (
       percent: number,
@@ -545,7 +563,7 @@ export const register: Register = (on, options) => {
     })()
 
     return (
-      <Box flexDirection="column" gap={1}>
+      <Box key="session-details" flexDirection="column" gap={isTerminal ? 0 : 1}>
         <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
           <Text bold wrap="truncate-end">Session Details</Text>
           <Button
@@ -562,7 +580,7 @@ export const register: Register = (on, options) => {
         <Box
           key="context-summary"
           flexDirection="column"
-          gap={1}
+          gap={isTerminal ? 0 : 1}
           borderStyle="round"
           borderColor={usageColor(personalPercent)}
           paddingX={1}
@@ -604,11 +622,16 @@ export const register: Register = (on, options) => {
           </Box>
           {contextTargetEditor}
           <Text dimColor wrap="truncate-end">
-            {current.model} · {tokenLabel(current.rawMaxTokens)} model window
+            {current.model} · {modelWindowLabel(current.rawMaxTokens)} model window
           </Text>
         </Box>
 
-        <Box flexDirection="column" gap={1} marginTop={1}>
+        <Box
+          key="account-usage"
+          flexDirection="column"
+          gap={isTerminal ? 0 : 1}
+          marginTop={isTerminal ? 0 : 1}
+        >
           <Text bold>Account usage</Text>
           {rateLimits.length > 0 ? rateLimits.map(limit => (
             <Box key={limit.kind} flexDirection="column">

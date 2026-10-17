@@ -900,7 +900,7 @@ export const register: Register = on => {
             <Text dimColor>Ask Claude to break substantive work into tasks.</Text>
           </Box>
         ) : (
-          <>
+          <Box flexDirection="column" gap={1}>
             <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
               <Box gap={0} flexShrink={1} overflow="hidden">
                 {progress.filled && <Text color="success">{progress.filled}</Text>}
@@ -978,7 +978,7 @@ export const register: Register = on => {
                 </Box>
               )
             })}
-          </>
+          </Box>
         )}
       </Box>
     )

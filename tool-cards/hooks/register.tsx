@@ -1,4 +1,4 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 const MAX_DETAIL_CHARS = 6_000
 const MAX_TRACKED_TOOLS = 200
@@ -21,7 +21,7 @@ const expansionOverrides = new Map<string, boolean>()
 let currentTime = 0
 let activeTools = 0
 let sessionGeneration = 0
-let stopTicker: (() => void) | null = null
+let stopTicker: Timer | null = null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -49,7 +49,7 @@ function clearSessionState(): void {
 }
 
 function stopClockTicker(): void {
-  stopTicker?.()
+  stopTicker?.cancel()
   stopTicker = null
 }
 
@@ -87,24 +87,48 @@ function startClockTicker($: EngineInterface): void {
   })
 }
 
-function inputTarget(tool: string, input: unknown): string {
-  if (!isRecord(input)) return 'No details'
+function compactPath(value: string): string {
+  const parts = value.replaceAll('\\', '/').split('/').filter(Boolean)
+  return parts.length > 1 ? parts.slice(-2).join('/') : value
+}
 
-  if (tool === 'Bash') {
-    const description = asString(input.description)
-    if (description) return truncate(description, 90)
-  }
+function quoted(value: string): string {
+  return `"${truncate(value, 56)}"`
+}
 
-  const candidate = input.file_path
-    ?? input.path
-    ?? input.command
-    ?? input.pattern
-    ?? input.query
-    ?? input.url
-    ?? input.description
-    ?? input.subject
+function actionTitle(tool: string, input: unknown): string {
+  if (!isRecord(input)) return `${toolLabel(tool)} call`
 
-  return typeof candidate === 'string' ? truncate(candidate, 90) : 'No details'
+  const description = asString(input.description)
+  if (description) return truncate(description, 78)
+
+  const subject = asString(input.subject)
+  if (tool.endsWith('__task_create') && subject) return truncate(subject, 78)
+  if (tool.endsWith('__task_update')) return 'Update Work Queue task'
+  if (tool.endsWith('__task_list')) return 'Review Work Queue'
+  if (tool.endsWith('__task_clear')) return 'Clear Work Queue'
+
+  const filePath = asString(input.file_path) ?? asString(input.path)
+  const target = filePath ? compactPath(filePath) : undefined
+
+  if (tool === 'Bash') return 'Run terminal command'
+  if (tool === 'Read') return target ? `Read ${target}` : 'Read file'
+  if (tool === 'Edit' || tool === 'NotebookEdit') return target ? `Edit ${target}` : 'Edit file'
+  if (tool === 'Write') return target ? `Write ${target}` : 'Write file'
+
+  const pattern = asString(input.pattern)
+  if (tool === 'Glob') return pattern ? `Find files matching ${quoted(pattern)}` : 'Find files'
+  if (tool === 'Grep') return pattern ? `Search for ${quoted(pattern)}` : 'Search project'
+
+  const query = asString(input.query)
+  if (tool === 'WebSearch') return query ? `Search the web for ${quoted(query)}` : 'Search the web'
+
+  const url = asString(input.url)
+  if (tool === 'WebFetch') return url ? `Open ${truncate(url, 64)}` : 'Open web page'
+
+  if (tool === 'Agent') return subject ? truncate(subject, 78) : 'Run agent task'
+
+  return `${toolLabel(tool)} call`
 }
 
 function status(isRunning: boolean, isErrored: boolean, isInterrupted: boolean): ToolState {
@@ -121,15 +145,35 @@ function statusColor(state: ToolState): 'success' | 'warning' | 'error' | 'inact
   return 'success'
 }
 
+function statusLabel(state: ToolState): string {
+  if (state === 'running') return 'Running'
+  if (state === 'done') return 'Completed'
+  if (state === 'failed') return 'Failed'
+  return 'Stopped'
+}
+
 function toolGlyph(tool: string): string {
-  if (tool === 'Bash') return '>'
-  if (tool === 'Read') return 'R'
-  if (tool === 'Edit' || tool === 'NotebookEdit') return '~'
+  if (tool === 'Bash') return '>_'
+  if (tool === 'Read') return '▤'
+  if (tool === 'Edit' || tool === 'NotebookEdit') return '✎'
   if (tool === 'Write') return '+'
-  if (tool === 'Glob' || tool === 'Grep' || tool === 'WebSearch') return '?'
-  if (tool === 'Agent') return '@'
-  if (tool.startsWith('mcp__')) return '*'
-  return '#'
+  if (tool === 'Glob' || tool === 'Grep') return '⌕'
+  if (tool === 'WebSearch' || tool === 'WebFetch') return '↗'
+  if (tool === 'Agent') return '◎'
+  if (tool.startsWith('mcp__')) return '◆'
+  return '•'
+}
+
+function toolColor(tool: string): string {
+  if (tool === 'Bash') return 'claude'
+  if (tool === 'Read') return 'ide'
+  if (tool === 'Edit' || tool === 'NotebookEdit') return 'diffAdded'
+  if (tool === 'Write') return 'success'
+  if (tool === 'Glob' || tool === 'Grep') return 'warning'
+  if (tool === 'WebSearch' || tool === 'WebFetch') return 'ide'
+  if (tool === 'Agent') return 'remember'
+  if (tool.startsWith('mcp__')) return 'permission'
+  return 'subtle'
 }
 
 function toolLabel(tool: string): string {
@@ -253,6 +297,18 @@ function resultSummary(tool: string, output: unknown, state: ToolState): string 
 
 function outputDetail(tool: string, output: unknown): ToolDetail | null {
   if (typeof output === 'string' && output) {
+    try {
+      const parsed = JSON.parse(output)
+      if (isRecord(parsed) || Array.isArray(parsed)) {
+        return {
+          source: truncate(JSON.stringify(parsed, null, 2), MAX_DETAIL_CHARS),
+          format: 'source',
+        }
+      }
+    } catch {
+      // Plain-text output stays plain text.
+    }
+
     return {
       source: truncate(output, MAX_DETAIL_CHARS),
       format: 'source',
@@ -275,7 +331,7 @@ function outputDetail(tool: string, output: unknown): ToolDetail | null {
       return {
         source: patch,
         format: 'diff',
-        path: asString(gitDiff.filename),
+        path: gitDiff ? asString(gitDiff.filename) : undefined,
       }
     }
   }
@@ -299,6 +355,14 @@ function outputDetail(tool: string, output: unknown): ToolDetail | null {
   if (typeof output.text === 'string' && output.text) {
     return {
       source: truncate(output.text, MAX_DETAIL_CHARS),
+      format: 'source',
+    }
+  }
+
+  const serialized = JSON.stringify(output, null, 2)
+  if (serialized) {
+    return {
+      source: truncate(serialized, MAX_DETAIL_CHARS),
       format: 'source',
     }
   }
@@ -372,51 +436,118 @@ export const register: Register = on => {
     const duration = timingLabel(event.props.tool_use_id, event.props.output)
     const detail = outputDetail(event.props.tool, event.props.output)
     const expanded = expansionOverrides.get(event.props.tool_use_id) ?? event.props.isErrored
+    const toggleDetails = (): void => {
+      expansionOverrides.set(event.props.tool_use_id, !expanded)
+      $.ui.invalidate('ui.render')
+    }
+
+    if (event.surface === 'terminal') {
+      return (
+        <Box flexDirection="column" overflow="hidden">
+          <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+            <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Text color={toolColor(event.props.tool)} bold>{toolGlyph(event.props.tool)}</Text>
+              <Text bold wrap="truncate-middle">
+                {actionTitle(event.props.tool, event.props.input)}
+              </Text>
+            </Box>
+            {detail && (
+              <Box flexShrink={0}>
+                <Button
+                  key={`tool-card-details:${event.props.tool_use_id}`}
+                  label={expanded ? 'Hide details' : 'Details'}
+                  variant="secondary"
+                  onPress={toggleDetails}
+                />
+              </Box>
+            )}
+          </Box>
+          <Box marginLeft={3} gap={1} alignItems="center" flexWrap="wrap" overflow="hidden">
+            <Text color={color} bold>{statusLabel(state)}</Text>
+            <Text dimColor>·</Text>
+            <Text dimColor>{toolLabel(event.props.tool)}</Text>
+            {duration && <Text dimColor>·</Text>}
+            {duration && <Text dimColor>{duration}</Text>}
+            {summary && <Text dimColor>·</Text>}
+            {summary && <Text dimColor wrap="truncate-middle">{summary}</Text>}
+          </Box>
+          {detail && expanded && (
+            <Box marginLeft={3} marginTop={1}>
+              <Code
+                source={detail.source}
+                format={detail.format}
+                path={detail.path}
+                wrap="truncate-end"
+              />
+            </Box>
+          )}
+        </Box>
+      )
+    }
 
     return (
       <Box
         borderStyle="round"
-        paddingX={1}
+        borderDimColor
+        paddingX={2}
+        paddingY={1}
+        marginY={1}
         flexDirection="column"
         overflow="hidden"
+        gap={1}
       >
-        <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+        <Box justifyContent="space-between" alignItems="center" gap={2} overflow="hidden">
           <Box
-            gap={1}
+            gap={2}
             alignItems="center"
-            flexWrap="wrap"
             flexGrow={1}
             flexShrink={1}
             minWidth={0}
             overflow="hidden"
           >
-            <Text color={color} bold>{toolGlyph(event.props.tool)}</Text>
-            <Text color={color} bold>
-              {state.toUpperCase().padEnd(7)}
-            </Text>
-            <Text bold wrap="truncate-end">{toolLabel(event.props.tool)}</Text>
-            {duration && <Text dimColor>{duration}</Text>}
-            {summary && <Text dimColor wrap="truncate-middle">{summary}</Text>}
+            <Box
+              borderStyle="round"
+              borderColor={toolColor(event.props.tool)}
+              backgroundColor={toolColor(event.props.tool)}
+              paddingX={1}
+              flexShrink={0}
+            >
+              <Text color="inverseText" bold>{toolGlyph(event.props.tool)}</Text>
+            </Box>
+            <Box
+              flexDirection="column"
+              flexGrow={1}
+              flexShrink={1}
+              minWidth={0}
+              overflow="hidden"
+            >
+              <Text bold wrap="truncate-middle">
+                {actionTitle(event.props.tool, event.props.input)}
+              </Text>
+              <Box gap={1} alignItems="center" flexWrap="wrap" overflow="hidden">
+                <Text color={color} bold>{statusLabel(state)}</Text>
+                <Text dimColor>·</Text>
+                <Text dimColor>{toolLabel(event.props.tool)}</Text>
+                {duration && <Text dimColor>·</Text>}
+                {duration && <Text dimColor>{duration}</Text>}
+                {summary && <Text dimColor>·</Text>}
+                {summary && <Text dimColor wrap="truncate-middle">{summary}</Text>}
+              </Box>
+            </Box>
           </Box>
           {detail && (
             <Box flexShrink={0}>
               <Button
                 key={`tool-card-details:${event.props.tool_use_id}`}
-                label={expanded ? 'Hide' : 'Details'}
+                label={expanded ? 'Hide details' : 'Details'}
                 variant="secondary"
-                onPress={() => {
-                  expansionOverrides.set(event.props.tool_use_id, !expanded)
-                  $.ui.invalidate('ui.render')
-                }}
+                onPress={toggleDetails}
               />
             </Box>
           )}
         </Box>
-        <Text dimColor wrap="truncate-middle">
-          {inputTarget(event.props.tool, event.props.input)}
-        </Text>
         {detail && expanded && (
-          <Box marginTop={1}>
+          <Box marginLeft={7} paddingX={1} paddingY={1} borderStyle="round" borderDimColor>
             <Code
               source={detail.source}
               format={detail.format}
@@ -427,5 +558,10 @@ export const register: Register = on => {
         )}
       </Box>
     )
+  })
+
+  on('ui.render', { component: 'ToolResult' }, ($, event) => {
+    const { Box } = $.ui.resolve(event)
+    return <Box />
   })
 }

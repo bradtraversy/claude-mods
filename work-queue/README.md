@@ -23,7 +23,7 @@ The progress rail shows completed work at a glance. The focused task uses its `a
 
 Select `Details` to see the full description, owner, creation and update times, tasks that block it, and tasks that depend on it. Dependencies are clickable, so you can move through the work graph without leaving the pane. Completed tasks leave the active list automatically. Select `Show N done` to review them and `Hide N done` to collapse them again.
 
-The pane does not open in an empty session and does not take keyboard focus when it opens automatically. Enter `/work-queue` to open it manually or bring it back after closing it.
+The pane does not open in an empty session and does not take keyboard focus when it opens automatically. Claude Code only auto-places an unrequested terminal sidebar when the terminal is at least 144 columns wide. At 110 to 143 columns, enter `/work-queue` to place it manually or bring it back after closing it.
 
 ## Model-callable tools
 

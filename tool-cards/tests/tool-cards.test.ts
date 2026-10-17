@@ -21,9 +21,72 @@ test('renders a completed tool card on terminal and desktop', async $ => {
       props: PROPS,
     })
 
-    expect(await ui.find({ type: 'Text', text: 'DONE   ' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Completed' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '▤' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Read' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '/project/src/app.ts' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Read src/app.ts' })).toBeDefined()
+    const drawn = await ui.drawn()
+    if (surface === 'desktop') {
+      expect(drawn).toMatchObject({
+        type: 'Box',
+        props: {
+          borderStyle: 'round',
+          borderDimColor: true,
+          paddingX: 2,
+          paddingY: 1,
+          marginY: 1,
+        },
+      })
+    } else {
+      expect(drawn).toMatchObject({
+        type: 'Box',
+        props: {
+          flexDirection: 'column',
+          overflow: 'hidden',
+        },
+      })
+      if (drawn.type !== 'Box') throw new Error('Expected a compact terminal Box')
+      expect(drawn.props?.borderStyle).toBeUndefined()
+      expect(drawn.props?.paddingY).toBeUndefined()
+      expect(drawn.props?.marginY).toBeUndefined()
+    }
+    await ui.unmount()
+  }
+})
+
+test('uses distinct icons and color tiles for tool families', async $ => {
+  const examples = [
+    { tool: 'Bash', glyph: '>_', color: 'claude', input: { command: 'npm test' } },
+    { tool: 'Read', glyph: '▤', color: 'ide', input: { file_path: '/project/src/app.ts' } },
+    { tool: 'Edit', glyph: '✎', color: 'diffAdded', input: { file_path: '/project/src/app.ts' } },
+    { tool: 'Write', glyph: '+', color: 'success', input: { file_path: '/project/src/app.ts' } },
+    { tool: 'Grep', glyph: '⌕', color: 'warning', input: { pattern: 'ToolUse' } },
+    { tool: 'WebSearch', glyph: '↗', color: 'ide', input: { query: 'Claude Code mods' } },
+    { tool: 'Agent', glyph: '◎', color: 'remember', input: { description: 'Review changes' } },
+    { tool: 'mcp__work_queue__task_list', glyph: '◆', color: 'permission', input: {} },
+  ] as const
+
+  for (const example of examples) {
+    const ui = await $.ui.mount({
+      plugin: 'tool-cards',
+      surface: 'desktop',
+      component: 'ToolUse',
+      requestId: `tool-icon-${example.tool}`,
+      props: {
+        ...PROPS,
+        tool_use_id: `tool-icon-${example.tool}`,
+        tool: example.tool,
+        input: example.input,
+        output: undefined,
+      } as never,
+    })
+
+    expect(await ui.find({ type: 'Text', text: example.glyph })).toBeDefined()
+    const boxes = await ui.findAll({ type: 'Box' })
+    expect(boxes.some(box => (
+      box.props.backgroundColor === example.color
+      && box.props.borderColor === example.color
+    ))).toBe(true)
     await ui.unmount()
   }
 })
@@ -47,7 +110,7 @@ test('constrains long targets inside the card', async $ => {
 
     expect((await ui.find({
       type: 'Text',
-      text: '/home/user/.claude/projects/a-very-long-project-name/session-logs/2026-10-17.jsonl',
+      text: 'Read session-logs/2026-10-17.jsonl',
     }))?.props.wrap).toBe('truncate-middle')
     expect(await ui.drawn()).toMatchObject({
       type: 'Box',
@@ -97,10 +160,10 @@ test('keeps grouped tool cards expanded', async ($, on) => {
 
 test('uses distinct colors for every tool state', async $ => {
   const states = [
-    { label: 'RUNNING', color: 'warning', isRunning: true, isErrored: false, isInterrupted: false },
-    { label: 'DONE   ', color: 'success', isRunning: false, isErrored: false, isInterrupted: false },
-    { label: 'FAILED ', color: 'error', isRunning: false, isErrored: true, isInterrupted: false },
-    { label: 'STOPPED', color: 'inactive', isRunning: false, isErrored: false, isInterrupted: true },
+    { label: 'Running', color: 'warning', isRunning: true, isErrored: false, isInterrupted: false },
+    { label: 'Completed', color: 'success', isRunning: false, isErrored: false, isInterrupted: false },
+    { label: 'Failed', color: 'error', isRunning: false, isErrored: true, isInterrupted: false },
+    { label: 'Stopped', color: 'inactive', isRunning: false, isErrored: false, isInterrupted: true },
   ] as const
 
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -166,7 +229,8 @@ test('shows useful result summaries and expandable details', async $ => {
       },
     })
 
-    expect(await edit.find({ type: 'Text', text: '~' })).toBeDefined()
+    expect(await edit.find({ type: 'Text', text: '✎' })).toBeDefined()
+    expect(await edit.find({ type: 'Text', text: 'Edit src/app.ts' })).toBeDefined()
     expect(await edit.find({ type: 'Text', text: '+3 -1' })).toBeDefined()
     expect((await edit.find({
       type: 'Button',
@@ -208,14 +272,61 @@ test('shows useful result summaries and expandable details', async $ => {
       },
     })
 
-    expect(await failed.find({ type: 'Text', text: '>' })).toBeDefined()
+    expect(await failed.find({ type: 'Text', text: '>_' })).toBeDefined()
     expect(await failed.find({ type: 'Text', text: 'Run the test suite' })).toBeDefined()
     expect(await failed.find({ type: 'Text', text: '3 output lines' })).toBeDefined()
     expect((await failed.find({ type: 'Code' }))?.props.source).toContain('AssertionError')
     expect((await failed.find({ type: 'Button', key: `tool-card-details:${failedId}` }))?.props.label)
-      .toBe('Hide')
+      .toBe('Hide details')
     await failed.unmount()
   }
+})
+
+test('keeps structured Work Queue output behind Details', async $ => {
+  const toolUseId = 'tool-work-queue-create'
+  const output = JSON.stringify({
+    task: {
+      id: 'queue-1',
+      subject: 'Build the API',
+      status: 'pending',
+    },
+  })
+  const toolUse = await $.ui.mount({
+    plugin: 'tool-cards',
+    surface: 'terminal',
+    component: 'ToolUse',
+    requestId: toolUseId,
+    props: {
+      ...PROPS,
+      tool_use_id: toolUseId,
+      tool: 'mcp__work-queue__task_create',
+      input: { subject: 'Build the API' },
+      output,
+    } as never,
+  })
+
+  expect(await toolUse.find({ type: 'Text', text: 'Build the API' })).toBeDefined()
+  expect(await toolUse.find({ type: 'Code' })).toBeUndefined()
+  await toolUse.press({ key: `tool-card-details:${toolUseId}` })
+  expect((await toolUse.find({ type: 'Code' }))?.props.source).toContain('"queue-1"')
+  await toolUse.unmount()
+
+  const toolResult = await $.ui.mount({
+    plugin: 'tool-cards',
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: toolUseId,
+    props: {
+      tool_use_id: toolUseId,
+      tool: 'mcp__work-queue__task_create',
+      output,
+      isErrored: false,
+    },
+  })
+  expect(await toolResult.drawn()).toMatchObject({ type: 'Box' })
+  expect(await toolResult.find({ type: 'Code' })).toBeUndefined()
+  expect(await toolResult.find({ type: 'Text' })).toBeUndefined()
+  await toolResult.unmount()
 })
 
 test('tracks elapsed time while a tool is running', async ($, on) => {

@@ -1,5 +1,10 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { RenderPropsOf, SessionContextBreakdown, SessionUsage } from 'claude-code'
+import type {
+  PaneOpenArgs,
+  RenderPropsOf,
+  SessionContextBreakdown,
+  SessionUsage,
+} from 'claude-code'
 
 const PROPS: RenderPropsOf['AbovePrompt'] = {
   hasSurvey: false,
@@ -29,8 +34,8 @@ const BREAKDOWN: SessionContextBreakdown = {
     { name: 'Autocompact buffer', tokens: 10_000, color: 'warning', isDeferred: false, kind: 'buffer' },
   ],
   totalTokens: 52_000,
-  maxTokens: 200_000,
-  rawMaxTokens: 200_000,
+  maxTokens: 1_000_000,
+  rawMaxTokens: 1_000_000,
   autocompactSource: 'auto',
   percentage: 26,
   gridRows: [],
@@ -69,6 +74,8 @@ test('shows usage against the configured context maximum on terminal and desktop
   let branch = 'feature/session-branch-indicator'
   let isGitRepository = true
   let configuredTarget: unknown
+  let isDetailsOpen = false
+  const opened: PaneOpenArgs[] = []
 
   const clock = mock.clock(on)
   on('session.usage', () => ({
@@ -78,7 +85,20 @@ test('shows usage against the configured context maximum on terminal and desktop
     },
   }))
   on('session.start', ($, event) => ({ cwd: event.cwd }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', ($, event) => {
+    opened.push(event)
+    isDetailsOpen = true
+    return { value: { isPlaced: true } }
+  })
+  on('ui.panes', () => ({
+    value: isDetailsOpen ? [{
+      id: 'context-breakdown',
+      title: 'Session',
+      isShown: true,
+      isFocused: true,
+      isPlaced: true,
+    }] : [],
+  }))
   on('session.cwd', () => ({ value: '/project' }))
   on('process.run', ($, event) => ({
     value: {
@@ -115,11 +135,8 @@ test('shows usage against the configured context maximum on terminal and desktop
     expect(await ui.find({ type: 'Text', text: 'Context' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '17% of 300k' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Week 64%' })).toBeDefined()
-    expect(await ui.find({
-      type: 'Button',
-      key: 'context-details',
-      props: { label: 'Details', variant: 'secondary' },
-    })).toBeDefined()
+    const detailsButton = await ui.find({ type: 'Button', key: 'context-details' })
+    expect(detailsButton?.props).toMatchObject({ label: 'Details', variant: 'secondary' })
     expect(await ui.find({ type: 'Text', text: '$1.24' })).toBeUndefined()
     const meter = await ui.find({ type: 'Text', text: /^█/ })
     expect(meter?.props.color).toBe('success')
@@ -160,6 +177,13 @@ test('shows usage against the configured context maximum on terminal and desktop
     expect(noBranch.props.color).toBe('inactive')
 
     await ui.press({ key: 'context-details' })
+    await ui.redraw(PROPS)
+    expect(opened.at(-1)?.columns).toBe(surface === 'terminal' ? 52 : 58)
+    if (surface === 'terminal') {
+      expect(await ui.find({ type: 'Button', key: 'context-details' })).toBeUndefined()
+    } else {
+      expect(await ui.find({ type: 'Button', key: 'context-details' })).toBeDefined()
+    }
 
     const pane = await $.ui.mount({
       plugin: 'session-hud',
@@ -173,16 +197,18 @@ test('shows usage against the configured context maximum on terminal and desktop
     expect(await pane.find({ type: 'Text', text: '52k used' })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: '248k until target' })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: 'Context makeup' })).toBeDefined()
-    expect(await pane.find({
-      type: 'Box',
-      key: 'context-summary',
-      props: { gap: 1 },
-    })).toBeDefined()
-    expect(await pane.find({
-      type: 'Button',
-      key: 'change-context-target',
-      props: { label: 'Change', variant: 'secondary' },
-    })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: 'Opus · 1M model window' })).toBeDefined()
+    const sessionDetails = await pane.find({ type: 'Box', key: 'session-details' })
+    expect(sessionDetails?.props.gap).toBe(surface === 'terminal' ? 0 : 1)
+    const contextSummary = await pane.find({ type: 'Box', key: 'context-summary' })
+    expect(contextSummary?.props.gap).toBe(surface === 'terminal' ? 0 : 1)
+    const accountUsage = await pane.find({ type: 'Box', key: 'account-usage' })
+    expect(accountUsage?.props).toMatchObject({
+      gap: surface === 'terminal' ? 0 : 1,
+      marginTop: surface === 'terminal' ? 0 : 1,
+    })
+    const changeTarget = await pane.find({ type: 'Button', key: 'change-context-target' })
+    expect(changeTarget?.props).toMatchObject({ label: 'Change', variant: 'secondary' })
     configuredTarget = undefined
     await pane.press({ key: 'change-context-target' })
     expect(await pane.find({ type: 'Input', key: 'context-target-input' })).toBeDefined()
@@ -212,6 +238,7 @@ test('shows usage against the configured context maximum on terminal and desktop
     expect(await pane.find({ type: 'Text', text: /Per-message counts are not available/ })).toBeDefined()
     await pane.unmount()
     await ui.unmount()
+    isDetailsOpen = false
   }
 })
 

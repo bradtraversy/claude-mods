@@ -79,6 +79,25 @@ function normalizeText(text: string): string {
   return `${normalized.slice(0, TRANSCRIPT_TEXT_LIMIT - 3)}...`
 }
 
+function builtInAgentId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return /\bagentId:\s*([A-Za-z0-9_-]+)\b/.exec(value)?.[1] ?? null
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const agentId = builtInAgentId(item)
+      if (agentId) return agentId
+    }
+    return null
+  }
+
+  if (typeof value !== 'object' || value === null) return null
+  const candidate = value as Record<string, unknown>
+  if (typeof candidate.agentId === 'string' && candidate.agentId) return candidate.agentId
+  return builtInAgentId(candidate.text) ?? builtInAgentId(candidate.content)
+}
+
 function sameAgent(left: AgentInfo, right: AgentInfo): boolean {
   return left.description === right.description
     && left.type === right.type
@@ -127,6 +146,12 @@ function rememberAgent(info: AgentInfo, now: number): boolean {
   return false
 }
 
+function maybeOpenPane($: EngineInterface): void {
+  if (didAutoOpen) return
+  didAutoOpen = true
+  void $.ui.open({ id: PANE, title: 'Agents', columns: 58 })
+}
+
 async function refreshAgents($: EngineInterface): Promise<void> {
   const generation = sessionGeneration
   const [agents, now] = await Promise.all([$.agent.list(), $.clock.now()])
@@ -140,20 +165,17 @@ async function refreshAgents($: EngineInterface): Promise<void> {
   }
 
   if (agents.length > 0 && !didAutoOpen) {
-    didAutoOpen = true
-    void $.ui.open({ id: PANE, title: 'Agents', columns: 58 })
+    maybeOpenPane($)
   }
 
   if (changed) $.ui.invalidate('ui.render')
 }
 
-async function refreshOpenPane($: EngineInterface): Promise<void> {
+async function pollAgents($: EngineInterface): Promise<void> {
   try {
-    const pane = (await $.ui.panes()).find(item => item.id === PANE)
-    if (!pane?.isPlaced || !pane.isShown) return
     await refreshAgents($)
   } catch {
-    // A refresh failure should never affect Claude's work.
+    // Agent discovery must never affect Claude's work.
   }
 }
 
@@ -214,7 +236,7 @@ export const register: Register = on => {
       description: 'Open the live subagent activity pane',
     })
     pollTimer = $.clock.every(POLL_INTERVAL_MS, () => {
-      void refreshOpenPane($)
+      void pollAgents($)
     })
     return next(event)
   })
@@ -259,10 +281,7 @@ export const register: Register = on => {
         currentTime = now
         seedSpawnedAgent(result.agentId, event, now)
 
-        if (!didAutoOpen) {
-          didAutoOpen = true
-          void $.ui.open({ id: PANE, title: 'Agents', columns: 58 })
-        }
+        maybeOpenPane($)
 
         $.ui.invalidate('ui.render')
         void refreshAgents($)
@@ -277,7 +296,25 @@ export const register: Register = on => {
   on('tool.call', async ($, event, next) => {
     const generation = sessionGeneration
     const agentId = event.agentId
-    const record = agentId ? records.get(agentId) : undefined
+    let record = agentId ? records.get(agentId) : undefined
+    const builtInAgentCall = event.tool === 'Agent' ? {
+      description: event.description,
+      subagentType: event.subagent_type,
+      name: event.name,
+    } : null
+
+    if (agentId && !record) {
+      const now = await $.clock.now()
+      if (generation !== sessionGeneration) return next(event)
+      rememberAgent({
+        id: agentId,
+        description: 'Background agent',
+        type: 'Agent',
+        status: 'running',
+      }, now)
+      record = records.get(agentId)
+      maybeOpenPane($)
+    }
 
     if (record) {
       const now = await $.clock.now()
@@ -289,6 +326,24 @@ export const register: Register = on => {
 
     const result = await next(event)
     if (generation !== sessionGeneration) return result
+
+    if (builtInAgentCall && !result.deny && !result.isError) {
+      const spawnedAgentId = builtInAgentId(result.result)
+      const now = await $.clock.now()
+      if (generation !== sessionGeneration) return result
+
+      if (spawnedAgentId) {
+        currentTime = now
+        seedSpawnedAgent(spawnedAgentId, {
+          description: builtInAgentCall.description,
+          subagentType: builtInAgentCall.subagentType ?? 'Agent',
+          name: builtInAgentCall.name,
+        }, now)
+      }
+
+      maybeOpenPane($)
+      $.ui.invalidate('ui.render')
+    }
 
     if (record) {
       const now = await $.clock.now()
@@ -313,6 +368,7 @@ export const register: Register = on => {
     if (record) {
       const now = await $.clock.now()
       if (generation !== sessionGeneration) return result
+      record.info = { ...record.info, status: 'completed' }
       record.currentTool = ''
       record.lastChangedAt = now
       $.ui.invalidate('ui.render')
@@ -440,7 +496,7 @@ export const register: Register = on => {
             <Text dimColor>The pane updates when Claude starts one.</Text>
           </Box>
         ) : (
-          <>
+          <Box flexDirection="column">
             <Box
               flexDirection="column"
               borderStyle="round"
@@ -579,7 +635,7 @@ export const register: Register = on => {
                 )
               })}
             </Box>
-          </>
+          </Box>
         )}
       </Box>
     )

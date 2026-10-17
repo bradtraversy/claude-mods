@@ -34,6 +34,8 @@ Claude Code also counts the current context and shows:
 
 The full breakdown runs only when you click `Details` or press Refresh. It does not poll in the background. Claude Code provides a reliable total for Messages, but it does not provide a reliable token count for every individual message.
 
+In the terminal, Session Details uses a narrower compact layout that keeps both account-usage windows visible sooner. The `Details` control hides while that pane is open. The Desktop layout keeps its roomier spacing.
+
 The context percentage uses a configurable personal target. It does not change Claude's actual context window or automatic compaction behavior.
 
 ## Change the context target

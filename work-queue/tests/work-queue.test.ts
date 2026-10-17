@@ -191,11 +191,11 @@ test('groups portable queue tools and opens dependency details on terminal and d
 
     expect(await ui.find({ type: 'Text', text: 'Work Queue' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '3 open' })).toBeDefined()
-    expect(await ui.find({
+    const completedToggle = await ui.find({
       type: 'Button',
       key: 'toggle-completed',
-      props: { label: 'Show 1 done', variant: 'secondary' },
-    })).toBeDefined()
+    })
+    expect(completedToggle?.props).toMatchObject({ label: 'Show 1 done', variant: 'secondary' })
     expect(await ui.find({ type: 'Text', text: '1 of 4 done' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Working now' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Blocked' })).toBeDefined()
@@ -206,11 +206,11 @@ test('groups portable queue tools and opens dependency details on terminal and d
     expect(await ui.find({ type: 'Text', text: 'Waiting on Build the API' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'api-agent' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '1m' })).toBeDefined()
-    expect(await ui.find({
+    const detailsButton = await ui.find({
       type: 'Button',
       key: 'task-view:queue-1',
-      props: { label: 'Details', variant: 'secondary' },
-    })).toBeDefined()
+    })
+    expect(detailsButton?.props).toMatchObject({ label: 'Details', variant: 'secondary' })
 
     await ui.press({ key: 'toggle-completed' })
     expect(await ui.find({ type: 'Text', text: 'Done' })).toBeDefined()
