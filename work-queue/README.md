@@ -32,6 +32,8 @@ The mod registers four tools:
 - `task_list` reads the current queue before Claude plans or updates work
 - `task_clear` removes every task when you ask Claude to clear or reset the Work Queue
 
+Dependency updates keep both sides of each relationship in sync. `task_update` rejects self-dependencies, missing blockers, and dependency cycles without changing the existing graph.
+
 A short session instruction tells Claude to use these tools for substantive work with several concrete steps, or whenever you explicitly ask for a task list. It also tells Claude not to create tasks for simple questions or one-step actions. The queue reflects real tool calls. It does not guess tasks from ordinary chat text or execute tasks itself.
 
 For compatibility, Work Queue still observes Claude's built-in `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet` tools when a runtime provides them. It also observes task-created and task-completed lifecycle events. These native Claude tasks are labeled as read-only in `task_list`; update them with Claude's native `TaskUpdate` tool. Work Queue never reports a local update as successful when the native task was not changed.

@@ -308,6 +308,16 @@ function toolError(message: string): { deny: string } {
   return { deny: message }
 }
 
+function dependsOn(taskId: string, targetId: string, visited = new Set<string>()): boolean {
+  if (taskId === targetId) return true
+  if (visited.has(taskId)) return false
+  visited.add(taskId)
+
+  const task = tasks.get(taskId)
+  if (!task || task.status === 'deleted') return false
+  return task.blockedBy.some(blockerId => dependsOn(blockerId, targetId, visited))
+}
+
 function blockerError(taskId: string | undefined, blockedBy: string[]): string | null {
   if (taskId && blockedBy.includes(taskId)) {
     return `Task ${taskId} cannot block itself.`
@@ -317,19 +327,46 @@ function blockerError(taskId: string | undefined, blockedBy: string[]): string |
     const blocker = tasks.get(id)
     return !blocker || blocker.status === 'deleted'
   })
-  return missing ? `Blocking task ${missing} was not found.` : null
+  if (missing) return `Blocking task ${missing} was not found.`
+
+  const cycle = taskId ? blockedBy.find(id => dependsOn(id, taskId)) : undefined
+  return cycle
+    ? `Task ${taskId} cannot be blocked by ${cycle} because that would create a dependency cycle.`
+    : null
 }
 
-function setBlockedBy(task: WorkTask, blockedBy: string[]): void {
-  for (const blockerId of task.blockedBy) {
-    const blocker = tasks.get(blockerId)
-    if (blocker) blocker.blocks = blocker.blocks.filter(id => id !== task.id)
+function ensureRelationshipTasks(ids: string[], now: number): void {
+  for (const id of ids) ensureTask(id, now)
+}
+
+function setRelationships(
+  task: WorkTask,
+  relationships: { blockedBy?: string[]; blocks?: string[] },
+): void {
+  if (relationships.blockedBy) {
+    for (const blockerId of task.blockedBy) {
+      const blocker = tasks.get(blockerId)
+      if (blocker) blocker.blocks = blocker.blocks.filter(id => id !== task.id)
+    }
+
+    task.blockedBy = unique(relationships.blockedBy.filter(id => id !== task.id))
+    for (const blockerId of task.blockedBy) {
+      const blocker = tasks.get(blockerId)
+      if (blocker) blocker.blocks = unique([...blocker.blocks, task.id])
+    }
   }
 
-  task.blockedBy = unique(blockedBy.filter(id => id !== task.id))
-  for (const blockerId of task.blockedBy) {
-    const blocker = tasks.get(blockerId)
-    if (blocker) blocker.blocks = unique([...blocker.blocks, task.id])
+  if (relationships.blocks) {
+    for (const blockedId of task.blocks) {
+      const blocked = tasks.get(blockedId)
+      if (blocked) blocked.blockedBy = blocked.blockedBy.filter(id => id !== task.id)
+    }
+
+    task.blocks = unique(relationships.blocks.filter(id => id !== task.id))
+    for (const blockedId of task.blocks) {
+      const blocked = tasks.get(blockedId)
+      if (blocked) blocked.blockedBy = unique([...blocked.blockedBy, task.id])
+    }
   }
 }
 
@@ -358,7 +395,7 @@ async function createOwnedTask(
   task.description = stringInput(input, 'description')?.trim() ?? ''
   task.activeForm = stringInput(input, 'activeForm')?.trim() ?? ''
   task.owner = stringInput(input, 'owner')?.trim() ?? ''
-  setBlockedBy(task, blockedBy)
+  setRelationships(task, { blockedBy })
   task.updatedAt = now
   changed($)
 
@@ -397,7 +434,7 @@ async function updateOwnedTask(
   if (description !== undefined) task.description = description.trim()
   if (activeForm !== undefined) task.activeForm = activeForm.trim()
   if (owner !== undefined) task.owner = owner.trim()
-  if (blockedBy) setBlockedBy(task, blockedBy)
+  if (blockedBy) setRelationships(task, { blockedBy })
   if (status === 'pending' || status === 'in_progress' || status === 'completed') {
     setStatus(task, status, now)
   }
@@ -643,18 +680,12 @@ export const register: Register = on => {
       if (event.activeForm !== undefined) task.activeForm = event.activeForm
       if (event.owner !== undefined) task.owner = event.owner
       if (event.addBlockedBy) {
-        task.blockedBy = unique([...task.blockedBy, ...event.addBlockedBy])
-        for (const blockerId of event.addBlockedBy) {
-          const blocker = ensureTask(blockerId, now)
-          blocker.blocks = unique([...blocker.blocks, task.id])
-        }
+        ensureRelationshipTasks(event.addBlockedBy, now)
+        setRelationships(task, { blockedBy: [...task.blockedBy, ...event.addBlockedBy] })
       }
       if (event.addBlocks) {
-        task.blocks = unique([...task.blocks, ...event.addBlocks])
-        for (const blockedId of event.addBlocks) {
-          const blocked = ensureTask(blockedId, now)
-          blocked.blockedBy = unique([...blocked.blockedBy, task.id])
-        }
+        ensureRelationshipTasks(event.addBlocks, now)
+        setRelationships(task, { blocks: [...task.blocks, ...event.addBlocks] })
       }
       task.updatedAt = now
       if (event.status) setStatus(task, event.status, now)
@@ -665,12 +696,16 @@ export const register: Register = on => {
       const listed = taskListResult(result.result)
       if (!listed) return result
 
+      for (const item of listed) ensureTask(item.id, now, item.subject)
+      ensureRelationshipTasks(listed.flatMap(item => item.blockedBy), now)
+
       for (const item of listed) {
-        const task = ensureTask(item.id, now, item.subject)
+        const task = tasks.get(item.id)
+        if (!task) continue
         const before = JSON.stringify([task.subject, task.owner, task.blockedBy, task.status])
         task.subject = item.subject
         task.owner = item.owner ?? ''
-        task.blockedBy = item.blockedBy
+        setRelationships(task, { blockedBy: item.blockedBy })
         setStatus(task, item.status, now)
         if (before !== JSON.stringify([task.subject, task.owner, task.blockedBy, task.status])) {
           task.updatedAt = now
@@ -684,6 +719,7 @@ export const register: Register = on => {
       if (!detail) return result
 
       const task = ensureTask(detail.id, now, detail.subject)
+      ensureRelationshipTasks([...detail.blockedBy, ...detail.blocks], now)
       const before = JSON.stringify([
         task.subject,
         task.description,
@@ -693,8 +729,7 @@ export const register: Register = on => {
       ])
       task.subject = detail.subject
       task.description = detail.description
-      task.blocks = detail.blocks
-      task.blockedBy = detail.blockedBy
+      setRelationships(task, { blockedBy: detail.blockedBy, blocks: detail.blocks })
       setStatus(task, detail.status, now)
       if (before !== JSON.stringify([
         task.subject,
