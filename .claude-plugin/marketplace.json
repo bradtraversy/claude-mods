@@ -33,7 +33,7 @@
     {
       "name": "work-queue",
       "source": "./work-queue",
-      "description": "Shows Claude session tasks grouped by working, blocked, ready, and done"
+      "description": "Shows Claude's live progress, focused work, named blockers, ready tasks, and completed work"
     }
   ]
 }

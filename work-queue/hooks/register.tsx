@@ -6,6 +6,7 @@ const CREATE_TOOL = 'mcp__work-queue__task_create'
 const UPDATE_TOOL = 'mcp__work-queue__task_update'
 const LIST_TOOL = 'mcp__work-queue__task_list'
 const CLEAR_TOOL = 'mcp__work-queue__task_clear'
+const PROGRESS_SEGMENTS = 10
 
 type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted'
 type TaskGroup = 'Working' | 'Blocked' | 'Ready' | 'Done'
@@ -179,6 +180,39 @@ function taskMeta(task: WorkTask, group: TaskGroup): string {
     parts.push(`${count} blocker${count === 1 ? '' : 's'}`)
   }
   return parts.join('  ') || 'Unassigned'
+}
+
+function progressSegments(done: number, total: number): { filled: string; empty: string } {
+  const filledCount = total === 0
+    ? 0
+    : Math.min(PROGRESS_SEGMENTS, Math.round((done / total) * PROGRESS_SEGMENTS))
+
+  return {
+    filled: '■'.repeat(filledCount),
+    empty: '□'.repeat(PROGRESS_SEGMENTS - filledCount),
+  }
+}
+
+function blockingSummary(task: WorkTask): string {
+  const blockers = task.blockedBy
+    .map(id => tasks.get(id))
+    .filter((blocker): blocker is WorkTask => (
+      blocker !== undefined
+      && blocker.status !== 'completed'
+      && blocker.status !== 'deleted'
+    ))
+    .map(blocker => blocker.subject)
+
+  return blockers.length > 0 ? `Waiting on ${blockers.join(', ')}` : 'Waiting on a dependency'
+}
+
+function unblocksLabel(task: WorkTask): string {
+  const count = task.blocks.filter(id => {
+    const blocked = tasks.get(id)
+    return blocked && blocked.status !== 'completed' && blocked.status !== 'deleted'
+  }).length
+
+  return count > 0 ? `Unblocks ${count}` : ''
 }
 
 function taskReference(id: string): WorkTask {
@@ -836,19 +870,21 @@ export const register: Register = on => {
     const visibleTasks = showCompleted ? sessionTasks : openTasks
     const openCount = openTasks.length
     const groups: TaskGroup[] = ['Working', 'Blocked', 'Ready', 'Done']
+    const progress = progressSegments(doneCount, sessionTasks.length)
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Box justifyContent="space-between" width="100%">
-          <Text bold>Work Queue</Text>
-          <Box gap={1}>
+        <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+          <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text bold>Work Queue</Text>
             {sessionTasks.length > 0 && <Text dimColor>{openCount} open</Text>}
+          </Box>
+          <Box gap={1}>
             {doneCount > 0 && (
               <Button
                 key="toggle-completed"
                 label={`${showCompleted ? 'Hide' : 'Show'} ${doneCount} done`}
-                plain
-                dimColor
+                variant="secondary"
                 onPress={() => {
                   showCompleted = !showCompleted
                   $.ui.invalidate('ui.render')
@@ -863,50 +899,87 @@ export const register: Register = on => {
             <Text dimColor>No tasks in this session.</Text>
             <Text dimColor>Ask Claude to break substantive work into tasks.</Text>
           </Box>
-        ) : openCount === 0 && !showCompleted ? (
-          <Text dimColor>All tasks completed.</Text>
-        ) : groups.map(group => {
-          const groupTasks = visibleTasks
-            .filter(task => taskGroup(task) === group)
-            .sort((left, right) => left.createdAt - right.createdAt)
-          if (groupTasks.length === 0) return null
-
-          return (
-            <Box key={`group:${group}`} flexDirection="column">
-              <Box gap={1}>
-                <Text color={groupColor(group)}>●</Text>
-                <Text bold>{group}</Text>
-                <Text dimColor>{groupTasks.length}</Text>
+        ) : (
+          <>
+            <Box justifyContent="space-between" alignItems="center" gap={1} overflow="hidden">
+              <Box gap={0} flexShrink={1} overflow="hidden">
+                {progress.filled && <Text color="success">{progress.filled}</Text>}
+                {progress.empty && <Text dimColor>{progress.empty}</Text>}
               </Box>
-
-              <Box flexDirection="column" marginLeft={2}>
-                {groupTasks.map(task => (
-                  <Box key={`task:${task.id}`} flexDirection="column" marginBottom={1}>
-                    <Box justifyContent="space-between" alignItems="center" width="100%">
-                      <Text wrap="truncate">{task.subject}</Text>
-                      <Button
-                        key={`task-view:${task.id}`}
-                        label="View"
-                        plain
-                        dimColor
-                        onPress={() => {
-                          selectedTaskId = task.id
-                          $.ui.invalidate('ui.render')
-                        }}
-                      />
-                    </Box>
-                    <Box justifyContent="space-between" width="100%">
-                      <Text dimColor wrap="truncate">
-                        {taskMeta(task, group)}
-                      </Text>
-                      <Text dimColor>{taskAge(task)}</Text>
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
+              <Text dimColor>{doneCount} of {sessionTasks.length} done</Text>
             </Box>
-          )
-        })}
+
+            {openCount === 0 && !showCompleted ? (
+              <Text color="success">All tasks completed.</Text>
+            ) : groups.map(group => {
+              const groupTasks = visibleTasks
+                .filter(task => taskGroup(task) === group)
+                .sort((left, right) => left.createdAt - right.createdAt)
+              if (groupTasks.length === 0) return null
+
+              return (
+                <Box key={`group:${group}`} flexDirection="column" gap={1}>
+                  <Box gap={1}>
+                    <Text color={groupColor(group)} bold>
+                      {group === 'Working' ? 'Working now' : group}
+                    </Text>
+                    <Text dimColor>{groupTasks.length}</Text>
+                  </Box>
+
+                  <Box flexDirection="column" gap={1}>
+                    {groupTasks.map(task => {
+                      const working = group === 'Working'
+                      const unblocks = working ? unblocksLabel(task) : ''
+
+                      return (
+                        <Box
+                          key={`task:${task.id}`}
+                          flexDirection="column"
+                          borderStyle={working ? 'round' : undefined}
+                          borderDimColor={working || undefined}
+                          paddingX={working ? 1 : 0}
+                          overflow="hidden"
+                        >
+                          <Box
+                            justifyContent="space-between"
+                            alignItems="center"
+                            gap={1}
+                            overflow="hidden"
+                          >
+                            <Text bold={working} wrap="truncate-end">
+                              {task.subject}
+                            </Text>
+                            <Button
+                              key={`task-view:${task.id}`}
+                              label="Details"
+                              variant="secondary"
+                              onPress={() => {
+                                selectedTaskId = task.id
+                                $.ui.invalidate('ui.render')
+                              }}
+                            />
+                          </Box>
+                          {working && task.activeForm && (
+                            <Text color="success" wrap="truncate-end">{task.activeForm}</Text>
+                          )}
+                          <Box justifyContent="space-between" gap={1} overflow="hidden">
+                            <Box gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                              <Text dimColor wrap="truncate-end">
+                                {group === 'Blocked' ? blockingSummary(task) : taskMeta(task, group)}
+                              </Text>
+                              {unblocks && <Text dimColor>{unblocks}</Text>}
+                            </Box>
+                            <Text dimColor>{taskAge(task)}</Text>
+                          </Box>
+                        </Box>
+                      )
+                    })}
+                  </Box>
+                </Box>
+              )
+            })}
+          </>
+        )}
       </Box>
     )
   })

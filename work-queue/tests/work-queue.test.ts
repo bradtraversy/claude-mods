@@ -191,13 +191,26 @@ test('groups portable queue tools and opens dependency details on terminal and d
 
     expect(await ui.find({ type: 'Text', text: 'Work Queue' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '3 open' })).toBeDefined()
-    expect(await ui.find({ type: 'Button', key: 'toggle-completed' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Working' })).toBeDefined()
+    expect(await ui.find({
+      type: 'Button',
+      key: 'toggle-completed',
+      props: { label: 'Show 1 done', variant: 'secondary' },
+    })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '1 of 4 done' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Working now' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Blocked' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Ready' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Build the API' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Building the API' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Unblocks 1' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Waiting on Build the API' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'api-agent' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '1m' })).toBeDefined()
+    expect(await ui.find({
+      type: 'Button',
+      key: 'task-view:queue-1',
+      props: { label: 'Details', variant: 'secondary' },
+    })).toBeDefined()
 
     await ui.press({ key: 'toggle-completed' })
     expect(await ui.find({ type: 'Text', text: 'Done' })).toBeDefined()
@@ -345,9 +358,9 @@ test('hydrates task lists and task details returned by Claude tools', async ($, 
     props: PANE_PROPS,
   })
 
-  expect(await ui.find({ type: 'Text', text: 'Working' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Working now' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Blocked' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'ui-agent  1 blocker' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Waiting on Finish the endpoint' })).toBeDefined()
 
   await ui.press({ key: 'task-view:10' })
   expect(await ui.find({
