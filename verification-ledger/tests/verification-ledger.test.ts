@@ -101,10 +101,18 @@ test('shows local checks, staleness, and GitHub CI on terminal and desktop', asy
       props: PROPS,
     })
 
-    expect(await ui.find({ type: 'Text', text: 'STALE  ' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Checks need a rerun' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Rerun Tests after the latest changes.' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '1 changed' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'STALE' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Tests' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'RUNNING' })).toBeDefined()
     expect(await ui.find({ type: 'Link', text: 'CI' })).toBeDefined()
+    expect(await ui.find({
+      type: 'Button',
+      key: 'refresh',
+      props: { label: 'Refresh', variant: 'secondary' },
+    })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -167,6 +175,7 @@ test('clears checks and auto-opens again after clear starts a new session', asyn
     type: 'Text',
     text: 'No verification commands recorded this session.',
   })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'No repository detected' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Tests' })).toBeUndefined()
 
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
