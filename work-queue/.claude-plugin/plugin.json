@@ -1,6 +1,6 @@
 {
   "name": "work-queue",
-  "version": "0.4.0",
-  "description": "Gives Claude a live session progress board with focused work, blockers, ready tasks, and completed work",
+  "version": "0.4.1",
+  "description": "Shows Claude's live progress, focused work, named blockers, ready tasks, and completed work",
   "author": { "name": "Brad Traversy" }
 }
