@@ -18,7 +18,7 @@
     {
       "name": "tool-cards",
       "source": "./tool-cards",
-      "description": "Replaces tool-use rows with compact status cards"
+      "description": "Replaces tool-use rows with diagnostic cards that show status, timing, results, and details"
     },
     {
       "name": "verification-ledger",
